@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library(util OBJECT log.cc crypto.cc arena.cc)
-target_link_libraries(util crypto zstd)
+add_library(util OBJECT log.cc crypto.cc)
+if(APPLE)
+    target_link_libraries(util "-framework Security" zstd)
+else()
+    target_link_libraries(util crypto zstd)
+endif()
 
 proofs_add_tests(ceildiv_test)
 
