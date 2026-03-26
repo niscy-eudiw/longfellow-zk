@@ -13,7 +13,12 @@
 # limitations under the License.
 
 add_library(util OBJECT log.cc crypto.cc)
-target_link_libraries(util crypto zstd)
+if(APPLE AND NOT PROOFS_USE_OPENSSL)
+    target_link_libraries(util zstd)
+    target_link_libraries(util "-framework Security")
+else()
+    target_link_libraries(util crypto zstd)
+endif()
 
 proofs_add_tests(ceildiv_test)
 

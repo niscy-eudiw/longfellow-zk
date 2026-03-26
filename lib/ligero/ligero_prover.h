@@ -39,6 +39,11 @@ class LigeroProver {
   explicit LigeroProver(const LigeroParam<Field> &p)
       : p_(p), mc_(p.block_enc - p.dblock), tableau_(p.nrow * p.block_enc) {}
 
+  // Swap the tableau with an external vector to temporarily free memory.
+  // Call with an empty vector to spill; call again with the saved vector to
+  // restore.
+  void swap_tableau(std::vector<Elt> &other) { tableau_.swap(other); }
+
   // The SUBFIELD_BOUNDARY parameter is kind of a hack.
   //
   // Most, but not all, witnesses in W[] are known statically to be in

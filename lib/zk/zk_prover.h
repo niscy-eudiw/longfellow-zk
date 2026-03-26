@@ -187,6 +187,13 @@ class ZkProver : public ProverLayers<Field> {
     }
   }
 
+  // Swap the internal LigeroProver tableau with an external vector.
+  // Use to temporarily free tableau memory between commit and prove.
+  void swap_tableau(std::vector<Elt>& other) {
+    check(lp_ != nullptr, "no ligero prover");
+    lp_->swap_tableau(other);
+  }
+
   const Circuit<Field>& c_;
   const size_t n_witness_;
   const Field& f_;

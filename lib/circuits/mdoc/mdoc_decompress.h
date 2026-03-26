@@ -22,6 +22,14 @@
 namespace proofs {
 extern size_t decompress(std::vector<uint8_t>& bytes, const uint8_t* compressed,
                          size_t compressed_len);
+
+#if defined(__APPLE__)
+// mmap-backed decompress: output goes to a memory-mapped temp file.
+// Caller must munmap(map_out, capacity) and close(fd_out) when done.
+extern size_t decompress(std::vector<uint8_t>& unused,
+                         const uint8_t* compressed, size_t compressed_len,
+                         int& fd_out, uint8_t*& map_out, size_t capacity);
+#endif
 }  // namespace proofs
 
 #endif  // PRIVACY_PROOFS_ZK_LIB_CIRCUITS_MDOC_MDOC_DECOMPRESS_H_

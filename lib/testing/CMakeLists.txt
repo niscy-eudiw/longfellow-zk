@@ -12,5 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library(testing_main test_main.cc)
+if(PROOFS_BUILD_TESTS)
+    add_library(testing_main test_main.cc)
+endif()
 

@@ -35,6 +35,11 @@
 
 namespace proofs {
 
+#if defined(__APPLE__) && !defined(PROOFS_ENABLE_LOG)
+// Logging is stubbed out in the header on Apple builds.
+void set_log_level(enum LogLevel) {}
+#else
+
 // This implementation maintains its own error thresholds in order to
 // support future migration away from absl or android logging libraries.
 static enum LogLevel _LOG_LEVEL = INFO;
@@ -56,6 +61,7 @@ const char* level_str(enum LogLevel l) {
 #endif
 
 void set_log_level(enum LogLevel l) { _LOG_LEVEL = l; }
+
 
 void log(enum LogLevel l, const char* format, ...) {
   va_list args;
@@ -106,5 +112,7 @@ void log(enum LogLevel l, const char* format, ...) {
   }
 #endif
 }
+
+#endif  // !(__APPLE__ && !PROOFS_ENABLE_LOG)
 
 }  // namespace proofs

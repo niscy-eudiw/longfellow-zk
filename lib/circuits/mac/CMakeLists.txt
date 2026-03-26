@@ -13,4 +13,6 @@
 # limitations under the License.
 
 proofs_add_tests(mac_circuit_test)
-target_link_libraries(mac_circuit_test ec)
+if(PROOFS_BUILD_TESTS)
+    target_link_libraries(mac_circuit_test ec)
+endif()

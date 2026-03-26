@@ -26,9 +26,15 @@
 #include <cstring>
 
 #include "util/panic.h"
+
+#if defined(__APPLE__)
+#include <CommonCrypto/CommonDigest.h>
+#include <CommonCrypto/CommonCryptor.h>
+#else
 #include "openssl/sha.h"
 #include "openssl/evp.h"
 #include "openssl/aes.h"
+#endif
 
 namespace proofs {
 
@@ -37,11 +43,67 @@ constexpr size_t kPRFKeySize = 32;
 constexpr size_t kPRFInputSize = 16;
 constexpr size_t kPRFOutputSize = 16;
 
+#if defined(__APPLE__)
+
+class SHA256 {
+ public:
+  SHA256() { CC_SHA256_Init(&sha_); }
+
+  SHA256(const SHA256&) = delete;
+  SHA256& operator=(const SHA256&) = delete;
+
+  void Update(const uint8_t bytes[/*n*/], size_t n) {
+    CC_SHA256_Update(&sha_, bytes, static_cast<CC_LONG>(n));
+  }
+  void DigestData(uint8_t digest[/* kSHA256DigestSize */]) {
+    CC_SHA256_Final(digest, &sha_);
+  }
+  void CopyState(const SHA256& src) { sha_ = src.sha_; }
+
+  void Update8(uint64_t x) {
+    uint8_t buf[8];
+    for (size_t i = 0; i < 8; ++i) {
+      buf[i] = x & 0xff;
+      x >>= 8;
+    }
+    Update(buf, 8);
+  }
+
+ private:
+  CC_SHA256_CTX sha_;
+};
+
+class PRF {
+ public:
+  explicit PRF(const uint8_t key[/*kPRFKeySize*/]) {
+    CCCryptorStatus status = CCCryptorCreate(
+        kCCEncrypt, kCCAlgorithmAES, kCCOptionECBMode, key, kPRFKeySize,
+        /*iv=*/nullptr, &cryptor_);
+    check(status == kCCSuccess, "CCCryptorCreate failed");
+  }
+
+  ~PRF() { CCCryptorRelease(cryptor_); }
+
+  PRF(const PRF&) = delete;
+  PRF& operator=(const PRF&) = delete;
+
+  void Eval(uint8_t out[/*kPRFOutputSize*/], uint8_t in[/*kPRFInputSize*/]) {
+    size_t moved = 0;
+    CCCryptorStatus status = CCCryptorUpdate(cryptor_, in, kPRFInputSize, out,
+                                             kPRFOutputSize, &moved);
+    check(status == kCCSuccess, "CCCryptorUpdate failed");
+  }
+
+ private:
+  CCCryptorRef cryptor_;
+};
+
+#else  // !__APPLE__
+
 class SHA256 {
  public:
   SHA256() { SHA256_Init(&sha_); }
 
-  // Disable copy for good measure.
   SHA256(const SHA256&) = delete;
   SHA256& operator=(const SHA256&) = delete;
 
@@ -64,8 +126,6 @@ class SHA256 {
   SHA256_CTX sha_;
 };
 
-// A pseudo-random function interface. This implementation uses AES in ECB mode.
-// The caller must ensure that arguments are not reused.
 class PRF {
  public:
   explicit PRF(const uint8_t key[/*kPRFKeySize*/]) {
@@ -77,15 +137,9 @@ class PRF {
 
   ~PRF() { EVP_CIPHER_CTX_free(ctx_); }
 
-  // Disable copy for good measure.
   PRF(const PRF&) = delete;
   PRF& operator=(const PRF&) = delete;
 
-  // Evaluate the PRF on the input and write the output to the output buffer.
-  // This method should only be used internally by the Transcript class. The
-  // caller must ensure that the input and output buffers are different.
-  // This function implements a permutation, but we only need to exploit its
-  // pseudo-random function property in this application.
   void Eval(uint8_t out[/*kPRFOutputSize*/], uint8_t in[/*kPRFInputSize*/]) {
     int out_len = static_cast<int>(kPRFOutputSize);
     int ret = EVP_EncryptUpdate(ctx_, out, &out_len, in,
@@ -96,6 +150,8 @@ class PRF {
  private:
   EVP_CIPHER_CTX* ctx_;
 };
+
+#endif  // __APPLE__
 
 // Generate n random bytes, following the openssl API convention.
 // This method will panic if the openssl library fails.

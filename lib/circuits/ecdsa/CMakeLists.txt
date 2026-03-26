@@ -13,7 +13,11 @@
 # limitations under the License.
 
 proofs_add_tests(verify_test)
-target_link_libraries(verify_test ec util)
+if(PROOFS_BUILD_TESTS)
+    target_link_libraries(verify_test ec util)
+endif()
 
 proofs_add_tests(verify_external_test)
-target_link_libraries(verify_external_test ec util crypto)
+if(PROOFS_BUILD_TESTS)
+    target_link_libraries(verify_external_test ec util crypto)
+endif()

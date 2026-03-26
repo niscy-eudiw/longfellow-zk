@@ -131,6 +131,28 @@ class CircuitRep {
   // the serialization matches the id stored in the circuit.
   std::unique_ptr<Circuit<Field>> from_bytes(ReadBuffer& buf,
                                              bool enforce_circuit_id) {
+    return from_bytes_impl(buf, enforce_circuit_id);
+  }
+
+#if defined(__APPLE__)
+  // Arena-backed parse: Quad corners are allocated directly in the arena,
+  // never touching the heap.
+  std::unique_ptr<Circuit<Field>> from_bytes(ReadBuffer& buf,
+                                             bool enforce_circuit_id,
+                                             MmapArena *arena) {
+    return from_bytes_impl(buf, enforce_circuit_id, arena);
+  }
+#endif
+
+ private:
+#if defined(__APPLE__)
+  std::unique_ptr<Circuit<Field>> from_bytes_impl(
+      ReadBuffer& buf, bool enforce_circuit_id,
+      MmapArena *arena = nullptr) {
+#else
+  std::unique_ptr<Circuit<Field>> from_bytes_impl(
+      ReadBuffer& buf, bool enforce_circuit_id) {
+#endif
     if (!buf.have(8 * kBytesWritten + 1)) {
       return nullptr;
     }
@@ -202,7 +224,12 @@ class CircuitRep {
         return nullptr;
       }
 
+#if defined(__APPLE__)
+      auto qq = arena ? std::make_unique<Quad<Field>>(nq, *arena)
+                      : std::make_unique<Quad<Field>>(nq);
+#else
       auto qq = std::make_unique<Quad<Field>>(nq);
+#endif
       size_t prevg = 0, prevhl = 0, prevhr = 0;
       for (size_t i = 0; i < nq; ++i) {
         size_t g = read_index(buf, prevg);

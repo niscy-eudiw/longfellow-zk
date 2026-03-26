@@ -30,6 +30,58 @@
 #include "util/panic.h"
 #define DEFINE_STRONG_INT_TYPE(a, b) using a = b
 
+#if defined(__APPLE__)
+#include <sys/mman.h>
+#include <unistd.h>
+
+// File-backed mmap arena.  All allocations come from a single temp file so iOS
+// can page-out the data under memory pressure (clean file-backed pages).
+// The arena hands out slices from one contiguous mapping; slices outlive the
+// arena because the mmap stays valid until the destructor.
+class MmapArena {
+  int fd_ = -1;
+  uint8_t *base_ = nullptr;
+  size_t capacity_ = 0;
+  size_t used_ = 0;
+
+ public:
+  MmapArena() = default;
+  ~MmapArena() {
+    if (base_) munmap(base_, capacity_);
+    if (fd_ >= 0) ::close(fd_);
+  }
+  MmapArena(const MmapArena &) = delete;
+  MmapArena &operator=(const MmapArena &) = delete;
+
+  bool init(size_t cap) {
+    FILE *f = tmpfile();
+    if (!f) return false;
+    fd_ = dup(fileno(f));
+    fclose(f);
+    if (fd_ < 0) return false;
+    capacity_ = cap;
+    if (ftruncate(fd_, static_cast<off_t>(cap)) != 0) return false;
+    base_ = static_cast<uint8_t *>(
+        mmap(nullptr, cap, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
+    if (base_ == MAP_FAILED) {
+      base_ = nullptr;
+      return false;
+    }
+    return true;
+  }
+
+  // Return aligned pointer into the arena, or nullptr on overflow.
+  void *alloc(size_t bytes, size_t align = 16) {
+    size_t off = (used_ + align - 1) & ~(align - 1);
+    if (off + bytes > capacity_) return nullptr;
+    used_ = off + bytes;
+    return base_ + off;
+  }
+
+  bool valid() const { return base_ != nullptr; }
+};
+#endif  // __APPLE__
+
 // ------------------------------------------------------------
 // Special-purpose sparse array for use with sumcheck
 namespace proofs {
@@ -87,14 +139,55 @@ class Quad {
 
   using index_t = size_t;
   index_t n_;
+
+  // On Apple/iOS, corner storage is a raw pointer that can be backed by either
+  // heap memory (c_heap_) or a file-backed MmapArena.  The arena path lets iOS
+  // page out circuit data under memory pressure instead of jetsaming the app.
+  // On other platforms, c_ is a plain std::vector.
+#if defined(__APPLE__)
+  corner *c_;
+  std::vector<corner> c_heap_;  // owns memory when arena is not used
+
+  void move_to_arena(MmapArena &arena) {
+    if (c_heap_.empty()) return;
+    void *p = arena.alloc(c_heap_.size() * sizeof(corner), alignof(corner));
+    if (!p) return;
+    memcpy(p, c_heap_.data(), c_heap_.size() * sizeof(corner));
+    c_ = static_cast<corner *>(p);
+    c_heap_.clear();
+    c_heap_.shrink_to_fit();
+  }
+#else
   std::vector<corner> c_;
+#endif
 
   bool operator==(const Quad& y) const {
-    return n_ == y.n_ &&
-           std::equal(c_.begin(), c_.end(), y.c_.begin(), y.c_.end());
+    return n_ == y.n_ && std::equal(c_, c_ + n_, y.c_);
   }
 
-  explicit Quad(index_t n) : n_(n), c_(n) {}
+  explicit Quad(index_t n) : n_(n) {
+#if defined(__APPLE__)
+    c_heap_.resize(n);
+    c_ = c_heap_.data();
+#else
+    c_.resize(n);
+#endif
+  }
+
+#if defined(__APPLE__)
+  // Arena-backed constructor: corners are allocated directly in the mmap arena,
+  // bypassing the heap entirely.  Falls back to heap if arena is exhausted.
+  Quad(index_t n, MmapArena &arena) : n_(n) {
+    void *p = arena.alloc(n * sizeof(corner), alignof(corner));
+    if (p) {
+      c_ = static_cast<corner *>(p);
+      memset(c_, 0, n * sizeof(corner));
+    } else {
+      c_heap_.resize(n);
+      c_ = c_heap_.data();
+    }
+  }
+#endif
 
   // no copies, but see clone() below
   Quad(const Quad& y) = delete;
@@ -203,7 +296,7 @@ class Quad {
     for (index_t i = 0; i < n_; ++i) {
       c_[i].canonicalize();
     }
-    std::sort(c_.begin(), c_.end(), [&F](const corner& x, const corner& y) {
+    std::sort(c_, c_ + n_, [&F](const corner& x, const corner& y) {
       return corner::compare(x, y, F);
     });
     coalesce(F);

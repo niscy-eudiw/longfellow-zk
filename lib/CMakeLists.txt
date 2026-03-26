@@ -23,7 +23,15 @@ if (CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 endif()
 
 # add compiler flags for all known ISA's
-string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCHITECTURE)
+# CMAKE_OSX_ARCHITECTURES is authoritative when set (cross-compilation),
+# otherwise fall back to CMAKE_SYSTEM_PROCESSOR.
+if(CMAKE_OSX_ARCHITECTURES)
+    string(TOLOWER "${CMAKE_OSX_ARCHITECTURES}" ARCHITECTURE)
+elseif(CMAKE_SYSTEM_PROCESSOR)
+    string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" ARCHITECTURE)
+else()
+    set(ARCHITECTURE "")
+endif()
 
 if(ARCHITECTURE MATCHES "x86_64")
     set(ARCH_FLAGS -mpclmul)
@@ -34,8 +42,12 @@ elseif(ARCHITECTURE MATCHES "aarch64")
 elseif(ARCHITECTURE MATCHES "armv7l")
     set(ARCH_FLAGS -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard)
 elseif(ARCHITECTURE MATCHES "arm64")
-    # Mac Arm
-    set(ARCH_FLAGS -mcpu=apple-m1 -march=armv8-a+crypto)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(ARCH_FLAGS -march=armv8-a+crypto)
+    else()
+        # Mac Arm
+        set(ARCH_FLAGS -mcpu=apple-m1 -march=armv8-a+crypto)
+    endif()
 else()
     set(ARCH_FLAGS "")
 endif()
@@ -72,13 +84,15 @@ add_subdirectory(circuits/mac)
 add_subdirectory(circuits/mdoc)
 add_subdirectory(circuits/sha)
 
-# experiments and tests, not used in production, may be buggy
-add_subdirectory(circuits/tests/anoncred)
-add_subdirectory(circuits/tests/sha3)
-add_subdirectory(circuits/tests/base64)
-add_subdirectory(circuits/tests/jwt)
-add_subdirectory(circuits/tests/ripemd)
+if(PROOFS_BUILD_TESTS)
+    # experiments and tests, not used in production, may be buggy
+    add_subdirectory(circuits/tests/anoncred)
+    add_subdirectory(circuits/tests/sha3)
+    add_subdirectory(circuits/tests/base64)
+    add_subdirectory(circuits/tests/jwt)
+    add_subdirectory(circuits/tests/ripemd)
 
-# experimental mdoc stuff, not used in production
-add_subdirectory(circuits/tests/mdoc)
+    # experimental mdoc stuff, not used in production
+    add_subdirectory(circuits/tests/mdoc)
+endif()
 

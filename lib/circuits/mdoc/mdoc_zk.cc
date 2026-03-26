@@ -18,6 +18,7 @@
 #include <sys/types.h>
 
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -46,6 +47,77 @@
 #include "zk/zk_prover.h"
 #include "zk/zk_verifier.h"
 #include "zstd.h"
+
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#include <sys/mman.h>
+#include <unistd.h>
+
+static void log_memory(const char *label) {
+  struct task_vm_info info;
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) ==
+      KERN_SUCCESS) {
+    fprintf(stderr, "[MdocZk] %-40s  phys: %.1f MB  internal: %.1f MB\n",
+            label, info.phys_footprint / (1024.0 * 1024.0),
+            info.internal / (1024.0 * 1024.0));
+  }
+}
+
+// RAII helper that provides file-backed mapped memory via a temporary file.
+// map() returns a pointer the caller uses directly — no memcpy needed.
+// The mapping stays valid until unmap() or the destructor.
+class TempFile {
+  int fd_ = -1;
+  void *map_ = nullptr;
+  size_t size_ = 0;
+
+ public:
+  TempFile() = default;
+  ~TempFile() { unmap(); }
+  TempFile(const TempFile &) = delete;
+  TempFile &operator=(const TempFile &) = delete;
+
+  // Create a file-backed mapping of n bytes.  Returns the mapped pointer,
+  // or nullptr on failure.  The caller reads/writes this pointer directly.
+  void *map(size_t n) {
+    unmap();
+    FILE *f = tmpfile();
+    if (!f) return nullptr;
+    fd_ = dup(fileno(f));
+    fclose(f);
+    if (fd_ < 0) return nullptr;
+    size_ = n;
+    if (ftruncate(fd_, static_cast<off_t>(n)) != 0) {
+      unmap();
+      return nullptr;
+    }
+    map_ = mmap(nullptr, n, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
+    if (map_ == MAP_FAILED) {
+      map_ = nullptr;
+      unmap();
+      return nullptr;
+    }
+    return map_;
+  }
+
+  void *ptr() const { return map_; }
+  size_t size() const { return size_; }
+
+  void unmap() {
+    if (map_) {
+      munmap(map_, size_);
+      map_ = nullptr;
+    }
+    if (fd_ >= 0) {
+      ::close(fd_);
+      fd_ = -1;
+      size_ = 0;
+    }
+  }
+};
+
+#endif  // __APPLE__
 
 // The result of getHashMacIndex is derived from the circuit layout.
 // It represents the location of the hash MAC wire in the hash verification
@@ -404,6 +476,10 @@ MdocProverErrorCode run_mdoc_prover(
     return MDOC_PROVER_NULL_INPUT;
   }
 
+#if defined(__APPLE__)
+  log_memory("prover entry");
+#endif
+
   Elt pkX, pkY;
   if (!parsePk(pkx, pky, pkX, pkY)) {
     log(ERROR, "invalid pkx, pky");
@@ -419,35 +495,83 @@ MdocProverErrorCode run_mdoc_prover(
   const f2_p256 p256_2(p256_base);
   const f_128 Fs;
 
-  size_t len = kCircuitSizeMax;
-  std::vector<uint8_t> bytes(len);
-  size_t full_size = decompress(bytes, bcp, bcsz);
-
+#if defined(__APPLE__)
+  // Decompress into an mmap-backed temp file so the 150 MB decompression
+  // buffer never hits the process heap.  iOS can page it out under pressure.
+  int decomp_fd = -1;
+  uint8_t *decomp_map = nullptr;
+  std::vector<uint8_t> bytes_unused;  // not used on Apple path
+  size_t full_size = decompress(bytes_unused, bcp, bcsz, decomp_fd, decomp_map,
+                                kCircuitSizeMax);
   if (full_size == 0) {
     return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
   }
-
+  log(INFO, "bytes len: %zu (mmap-backed)", full_size);
+  ReadBuffer rb_circuit(decomp_map, full_size);
+#else
+  size_t len = kCircuitSizeMax;
+  std::vector<uint8_t> bytes(len);
+  size_t full_size = decompress(bytes, bcp, bcsz);
+  if (full_size == 0) {
+    return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
+  }
   log(INFO, "bytes len: %zu", full_size);
   ReadBuffer rb_circuit(bytes.data(), full_size);
+#endif
+
+#if defined(__APPLE__)
+  // Pre-allocate file-backed mmap arenas for circuit corner data.  Quad
+  // corners are written directly into the arena during parsing, so they never
+  // touch the heap.  We size each arena to full_size (an upper bound on the
+  // serialized corner data); unused mmap pages cost nothing since they stay
+  // clean and are never faulted in.
+  auto sig_arena = std::make_unique<MmapArena>();
+  auto hash_arena = std::make_unique<MmapArena>();
+  if (!sig_arena->init(full_size) || !hash_arena->init(full_size)) {
+    log(ERROR, "failed to init mmap arenas");
+    return MDOC_PROVER_MEMORY_ALLOCATION_FAILURE;
+  }
+#endif
 
   CircuitRep<Fp256Base> cr_s(p256_base, P256_ID);
+#if defined(__APPLE__)
+  auto c_sig =
+      cr_s.from_bytes(rb_circuit, enforce_circuit_id_in_prover, sig_arena.get());
+  log_memory("after c_sig parse (arena-backed)");
+#else
   auto c_sig = cr_s.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
+#endif
   if (c_sig == nullptr) {
     log(ERROR, "signature circuit could not be parsed");
     return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
   }
-  CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
-  auto c_hash = cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
 
+  CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
+#if defined(__APPLE__)
+  auto c_hash =
+      cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_prover, hash_arena.get());
+  log_memory("after c_hash parse (arena-backed)");
+#else
+  auto c_hash = cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
+#endif
   if (c_hash == nullptr) {
     log(ERROR, "hash circuit could not be parsed");
     return MDOC_PROVER_HASH_PARSING_FAILURE;
   }
+
   log(INFO, "circuit created. h[in:%zu q:%zu], s[in:%zu q:%zu]",
       c_hash->ninputs, c_hash->nl, c_sig->ninputs, c_sig->nl);
 
-  // Free decompressed circuit bytes (~150MB) now that circuits are parsed.
+  // Free decompressed circuit bytes now that circuits are parsed.
+#if defined(__APPLE__)
+  munmap(decomp_map, kCircuitSizeMax);
+  ::close(decomp_fd);
+  decomp_map = nullptr;
+  decomp_fd = -1;
+  log_memory("after decomp mmap released");
+#else
   std::vector<uint8_t>().swap(bytes);
+#endif
 
   //  ============ Produce zk witness ==============
   auto W_sig = Dense<Fp256Base>(1, c_sig->ninputs);
@@ -493,6 +617,10 @@ MdocProverErrorCode run_mdoc_prover(
       c_hash->nl, c_hash->ninputs, c_sig->nl, c_sig->ninputs, h_zk.param.block,
       h_zk.param.nrow, sig_zk.param.block, sig_zk.param.nrow);
 
+#if defined(__APPLE__)
+  log_memory("after commits");
+#endif
+
   // After prover has committed to the public inputs, compute
   // verifier challenge av, and then compute MACs of the common public
   // inputs.
@@ -502,6 +630,44 @@ MdocProverErrorCode run_mdoc_prover(
   compute_macs(3, state.common, macs, macs_b, state.ap, av);
   update_macs(W_sig, W_hash, kSigMacIndex,
               getHashMacIndex(attrs_len, zk_spec->version), macs, av, Fs);
+
+  // Pre-compute output buffer size while both circuits are alive.
+  size_t tt = 6 * f_128::kBytes + h_zk.size() + sig_zk.size();
+
+#if defined(__APPLE__)
+  // Spill W_sig and sig_p's Ligero tableau to file-backed mapped memory to
+  // reduce peak heap during hash proof.  The mapped regions stay valid and are
+  // used directly when restoring — no memcpy round-trips.
+  TempFile sig_witness_file, sig_tableau_file;
+  size_t sig_ninputs = W_sig.v_.size();
+  {
+    size_t nbytes = sig_ninputs * sizeof(Elt);
+    auto *dst = static_cast<Elt *>(sig_witness_file.map(nbytes));
+    if (!dst) {
+      log(ERROR, "failed to map W_sig temp file");
+      return MDOC_PROVER_GENERAL_FAILURE;
+    }
+    memcpy(dst, W_sig.v_.data(), nbytes);
+    W_sig.v_.clear();
+    W_sig.v_.shrink_to_fit();
+    log(INFO, "W_sig spilled to mmap (%zu bytes)", nbytes);
+  }
+  // Spill the signature Ligero tableau (nrow * block_enc elements).
+  {
+    std::vector<Elt> tab;
+    sig_p->swap_tableau(tab);
+    size_t nbytes = tab.size() * sizeof(Elt);
+    auto *dst = static_cast<Elt *>(sig_tableau_file.map(nbytes));
+    if (!dst) {
+      log(ERROR, "failed to map sig tableau temp file");
+      return MDOC_PROVER_GENERAL_FAILURE;
+    }
+    memcpy(dst, tab.data(), nbytes);
+    log(INFO, "sig tableau spilled to mmap (%zu bytes)", nbytes);
+    // tab is freed here; data lives in the mmap.
+  }
+  log_memory("after spill to mmap");
+#endif  // __APPLE__
 
   if (!hash_p->prove(h_zk, W_hash, tp)) {
     return MDOC_PROVER_GENERAL_FAILURE;
@@ -513,6 +679,40 @@ MdocProverErrorCode run_mdoc_prover(
   W_hash.v_.clear();
   W_hash.v_.shrink_to_fit();
 
+  // Serialize hash proof immediately while c_hash is still alive (h_zk.write
+  // accesses circuit layer metadata), then free c_hash before sig proof.
+  std::vector<uint8_t> buf;
+  buf.reserve(tt);
+  buf.insert(buf.begin(), macs_b, macs_b + 6 * f_128::kBytes);
+  h_zk.write(buf, Fs);
+  c_hash.reset();
+#if defined(__APPLE__)
+  log_memory("after hash prove + serialize, c_hash freed");
+#endif
+
+#if defined(__APPLE__)
+  // Restore sig tableau and W_sig from the mapped temp files.
+  {
+    size_t nelt = sig_zk.param.nrow * sig_zk.param.block_enc;
+    auto *src = static_cast<Elt *>(sig_tableau_file.ptr());
+    std::vector<Elt> tab(nelt);
+    memcpy(tab.data(), src, nelt * sizeof(Elt));
+    sig_p->swap_tableau(tab);
+    sig_tableau_file.unmap();
+    log(INFO, "sig tableau restored from mmap");
+  }
+  {
+    W_sig.v_.resize(sig_ninputs);
+    auto *src = static_cast<Elt *>(sig_witness_file.ptr());
+    memcpy(W_sig.v_.data(), src, sig_ninputs * sizeof(Elt));
+    sig_witness_file.unmap();
+    log(INFO, "W_sig restored from mmap");
+  }
+#endif  // __APPLE__
+
+#if defined(__APPLE__)
+  log_memory("before sig prove");
+#endif
   if (!sig_p->prove(sig_zk, W_sig, tp)) {
     return MDOC_PROVER_GENERAL_FAILURE;
   };
@@ -523,17 +723,15 @@ MdocProverErrorCode run_mdoc_prover(
   W_sig.v_.clear();
   W_sig.v_.shrink_to_fit();
 
-  // Serialize proof to bytes.
-  // [6 mac values] [docType] [hash proof] [sig proof]
-  std::vector<uint8_t> buf;
-  // This sum will not overflow based on constraints of circuit & proof size.
-  size_t tt = 6 * f_128::kBytes + h_zk.size() + sig_zk.size();
-  buf.reserve(tt);
-  buf.insert(buf.begin(), macs_b, macs_b + 6 * f_128::kBytes);
-  h_zk.write(buf, Fs);
+  // Append signature proof to output buffer.
   sig_zk.write(buf, p256_base);
+  c_sig.reset();
   *proof_len = buf.size();
   log(INFO, "proof_len: %zu ", *proof_len);
+
+#if defined(__APPLE__)
+  log_memory("before return");
+#endif
 
   // Allocate memory and copy proof bytes.
   *prf = (uint8_t *)malloc(*proof_len);

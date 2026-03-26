@@ -27,7 +27,12 @@ enum LogLevel {
 
 void set_log_level(enum LogLevel l);
 
+#if defined(__APPLE__) && !defined(PROOFS_ENABLE_LOG)
+// Stub out logging on iOS to save memory (no format buffers, no chrono state).
+inline void log(enum LogLevel, const char*, ...) {}
+#else
 void log(enum LogLevel l, const char* format, ...);
+#endif
 }  // namespace proofs
 
 #endif  // PRIVACY_PROOFS_ZK_LIB_UTIL_LOG_H_
