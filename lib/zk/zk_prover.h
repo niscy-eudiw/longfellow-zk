@@ -194,6 +194,13 @@ class ZkProver : public ProverLayers<Field> {
     lp_->swap_tableau(other);
   }
 
+  // Free the internal witness vector.  It is only needed during commit();
+  // prove() does not access it.  Call after commit to reduce peak memory.
+  void clear_witness() {
+    witness_.clear();
+    witness_.shrink_to_fit();
+  }
+
   const Circuit<Field>& c_;
   const size_t n_witness_;
   const Field& f_;

@@ -617,6 +617,11 @@ MdocProverErrorCode run_mdoc_prover(
       c_hash->nl, c_hash->ninputs, c_sig->nl, c_sig->ninputs, h_zk.param.block,
       h_zk.param.nrow, sig_zk.param.block, sig_zk.param.nrow);
 
+  // ZkProver::witness_ is only needed during commit, not prove.
+  // Free both now to reduce peak heap before the prove phases.
+  hash_p->clear_witness();
+  sig_p->clear_witness();
+
 #if defined(__APPLE__)
   log_memory("after commits");
 #endif
@@ -666,6 +671,15 @@ MdocProverErrorCode run_mdoc_prover(
     log(INFO, "sig tableau spilled to mmap (%zu bytes)", nbytes);
     // tab is freed here; data lives in the mmap.
   }
+
+  // Clear sig_zk's req vector — it is allocated at construction but not
+  // populated until sig prove.  Freeing it during hash prove saves
+  // nrow * nreq * sizeof(Elt) bytes of idle heap.
+  size_t sig_req_size = sig_zk.com_proof.nrow * sig_zk.com_proof.nreq;
+  sig_zk.com_proof.req.clear();
+  sig_zk.com_proof.req.shrink_to_fit();
+  log(INFO, "sig_zk.com_proof.req cleared (%zu elts)", sig_req_size);
+
   log_memory("after spill to mmap");
 #endif  // __APPLE__
 
@@ -686,12 +700,20 @@ MdocProverErrorCode run_mdoc_prover(
   buf.insert(buf.begin(), macs_b, macs_b + 6 * f_128::kBytes);
   h_zk.write(buf, Fs);
   c_hash.reset();
+
+  // Free h_zk proof data now that it has been serialized.
+  { auto tmp = std::move(h_zk.com_proof.req); }
+  { auto tmp = std::move(h_zk.com_proof.merkle.path); }
+  { auto tmp = std::move(h_zk.com_proof.merkle.nonce); }
+
 #if defined(__APPLE__)
+  // hash_arena mmap is no longer referenced — release it.
+  hash_arena.reset();
   log_memory("after hash prove + serialize, c_hash freed");
 #endif
 
 #if defined(__APPLE__)
-  // Restore sig tableau and W_sig from the mapped temp files.
+  // Restore sig tableau, W_sig, and sig req from the mapped temp files.
   {
     size_t nelt = sig_zk.param.nrow * sig_zk.param.block_enc;
     auto *src = static_cast<Elt *>(sig_tableau_file.ptr());
@@ -708,6 +730,9 @@ MdocProverErrorCode run_mdoc_prover(
     sig_witness_file.unmap();
     log(INFO, "W_sig restored from mmap");
   }
+  // Re-allocate the sig req vector cleared earlier.
+  sig_zk.com_proof.req.resize(sig_req_size);
+  log(INFO, "sig_zk.com_proof.req restored (%zu elts)", sig_req_size);
 #endif  // __APPLE__
 
 #if defined(__APPLE__)
