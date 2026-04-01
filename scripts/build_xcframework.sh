@@ -22,9 +22,12 @@ else
 fi
 echo "Using cmake: $CMAKE"
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 LIB_DIR="$ROOT_DIR/lib"
-OUTPUT_DIR="$ROOT_DIR/build-xcframework"
+OUTPUT_DIR="$SCRIPT_DIR/build-xcframework"
+
+mkdir -p "$LIB_DIR"
 FRAMEWORK_NAME="MdocZk"
 DEPLOYMENT_TARGET_IOS="15.0"
 ZSTD_LIBS="$ROOT_DIR/third_party/zstd"

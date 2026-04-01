@@ -2,3 +2,7 @@
 /lib/build-iphonesimulator
 /lib/build
 /build-xcframework
+/scripts/build-xcframework/build-*/
+/scripts/build-xcframework/install-*/
+/scripts/build-xcframework/fat-*/
+/scripts/build-xcframework/include/
