@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "circuits/ecdsa/pk_circuit.h"
+#include "circuits/tests/ec/pk_circuit.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -25,10 +25,10 @@
 #include "arrays/dense.h"
 #include "circuits/compiler/circuit_dump.h"
 #include "circuits/compiler/compiler.h"
-#include "circuits/ecdsa/pk_witness.h"
 #include "circuits/logic/compiler_backend.h"
 #include "circuits/logic/evaluation_backend.h"
 #include "circuits/logic/logic.h"
+#include "circuits/tests/ec/pk_witness.h"
 #include "ec/p256.h"
 #include "ec/p256k1.h"
 #include "random/secure_random_engine.h"
@@ -121,6 +121,41 @@ class EcpkTest : public ::testing::Test {
       ASSERT_TRUE(ebk.assertion_failed());
     }
   }
+
+  // Test for a particular attack in which (0,0,0) is provided as the
+  // intermediate witness values.  This test should always fail.
+  void CheckRelationZeroWitness(const Nat& sk_nat,
+                                const typename EC::ECPoint& PK) {
+    const Field& F = Traits::field();
+    const EC& ec = Traits::ec();
+    const Scalar& scalar = Traits::scalar_field();
+
+    const EvalBackend ebk(F, false);
+    const LogicType l(&ebk, F);
+
+    EcpkC circuit(l, ec);
+    PkW wit_gen(scalar, ec);
+
+    // Compute the real witness.
+    EXPECT_TRUE(wit_gen.compute_witness(sk_nat));
+
+    EltW pk_x = l.konst(PK.x);
+    EltW pk_y = l.konst(PK.y);
+
+    // Set the intermediate witness values to 0.
+    typename EcpkC::Witness w;
+    for (size_t j = 0; j < EC::kBits; ++j) {
+      w.bits[j] = l.konst(wit_gen.bits_[j]);
+      if (j < EC::kBits - 1) {
+        w.int_x[j] = l.konst(F.zero());
+        w.int_y[j] = l.konst(F.zero());
+        w.int_z[j] = l.konst(F.zero());
+      }
+    }
+
+    circuit.assert_public_key(pk_x, pk_y, w);
+    ASSERT_TRUE(ebk.assertion_failed());
+  }
 };
 
 TYPED_TEST_SUITE_P(EcpkTest);
@@ -134,10 +169,7 @@ TYPED_TEST_P(EcpkTest, VerifyRelation) {
 
   for (int i = 0; i < 5; ++i) {
     Nat sk_nat = Nat(9876543219999 + i);
-    auto G = ec.generator();
-    typename EC::ECPoint bases[] = {G};
-    Nat scalars[] = {sk_nat};
-    auto PK = ec.scalar_multf(1, bases, scalars);
+    auto PK = ec.scalar_multf(ec.generator(), sk_nat);
     ec.normalize(PK);
 
     this->CheckRelation(sk_nat, PK, true);
@@ -155,14 +187,27 @@ TYPED_TEST_P(EcpkTest, VerifyFailure) {
 
   Nat sk_nat = Nat(123456);
 
-  typename EC::ECPoint bases[] = {ec.generator()};
   Nat sk_plus_one = sk_nat;
   scalar.add(sk_plus_one, Nat(1));
-  Nat scalars[] = {sk_plus_one};
-  auto PK_wrong = ec.scalar_multf(1, bases, scalars);
+  auto PK_wrong = ec.scalar_multf(ec.generator(), sk_plus_one);
   ec.normalize(PK_wrong);
 
   this->CheckRelation(sk_nat, PK_wrong, false);
+}
+
+TYPED_TEST_P(EcpkTest, VerifyZeroWitnessFailure) {
+  using Field = typename TypeParam::Field;
+  using EC = typename TypeParam::EC;
+  using Nat = typename Field::N;
+
+  const EC& ec = TypeParam::ec();
+
+  Nat sk_nat = Nat(123456);
+
+  auto PK = ec.scalar_multf(ec.generator(), sk_nat);
+  ec.normalize(PK);
+
+  this->CheckRelationZeroWitness(sk_nat, PK);
 }
 
 TYPED_TEST_P(EcpkTest, CircuitSize) {
@@ -240,9 +285,7 @@ void fill_input(Dense<typename Traits::Field>& W, size_t numSigs, bool prover) {
   filler.push_back(field.one());
 
   Nat sk = Nat(123456789);
-  typename EC::ECPoint bases[] = {ec.generator()};
-  Nat scalars[] = {sk};
-  auto PK = ec.scalar_multf(1, bases, scalars);
+  auto PK = ec.scalar_multf(ec.generator(), sk);
   ec.normalize(PK);
   wit_gen.compute_witness(sk);
 
@@ -295,7 +338,8 @@ TYPED_TEST_P(EcpkTest, ZkProverVerifier) {
 }
 
 REGISTER_TYPED_TEST_SUITE_P(EcpkTest, VerifyRelation, VerifyFailure,
-                            CircuitSize, ZkProverVerifier);
+                            VerifyZeroWitnessFailure, CircuitSize,
+                            ZkProverVerifier);
 
 using TestTypes = ::testing::Types<P256Traits, P256K1Traits>;
 INSTANTIATE_TYPED_TEST_SUITE_P(P256, EcpkTest, TestTypes);

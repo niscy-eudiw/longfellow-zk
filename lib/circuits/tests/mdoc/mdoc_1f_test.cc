@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "algebra/convolution.h"
@@ -201,7 +202,7 @@ TEST(jwt, EvalJWT) {
       size_t len = sizeof(want);
       oa2i.len = L.vbit<8>(len);
     }
-    oa2.push_back(oa2i);
+    oa2.push_back(std::move(oa2i));
   }
 
   EXPECT_TRUE(rmw.compute_witness(pkX, pkY, t0.mdoc, t0.mdoc_size,

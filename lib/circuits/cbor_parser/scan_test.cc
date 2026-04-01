@@ -62,7 +62,7 @@ static void one_add(size_t n, const uint64_t A[/*n*/], const uint64_t ds[/*n*/],
     if (S[i]) {
       s = AA[i];
     } else {
-      s = CTR.add(&s, ddss[i]);
+      s = CTR.add(s, ddss[i]);
     }
     BB[i] = s;
   }
@@ -109,7 +109,7 @@ static void one_add(size_t n, const uint64_t ds[/*n*/]) {
 
   auto s = CTR.as_counter(0);
   for (size_t i = 0; i < n; ++i) {
-    s = CTR.add(&s, ddss[i]);
+    s = CTR.add(s, ddss[i]);
     BB[i] = s;
   }
 

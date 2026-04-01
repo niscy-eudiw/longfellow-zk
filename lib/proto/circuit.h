@@ -15,21 +15,17 @@
 #ifndef PRIVACY_PROOFS_ZK_LIB_PROTO_CIRCUIT_H_
 #define PRIVACY_PROOFS_ZK_LIB_PROTO_CIRCUIT_H_
 
-#include <sys/types.h>
-
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
-#include "algebra/hash.h"
 #include "sumcheck/circuit.h"
 #include "sumcheck/circuit_id.h"
 #include "sumcheck/quad.h"
+#include "sumcheck/quad_builder.h"
 #include "util/ceildiv.h"
 #include "util/panic.h"
 #include "util/readbuffer.h"
@@ -49,7 +45,7 @@ namespace proofs {
 //
 // This class implements an optimization by which internal indices for
 // wire and gate labels and circuit size statistics are stored in a configurable
-// number of bytes (kBytesWritten) which we set to 4 instead of 8 to save
+// number of bytes (kBytesPerSizeT) which we set to 3 instead of 8 to save
 // space.  If this value is set to >4, there is a possibility of failure on
 // 32b platforms, which currently stops execution.  Thus, all circuits must be
 // tested on 32b platforms to ensure they are small enough to work.
@@ -74,15 +70,24 @@ class CircuitRep {
   constexpr static size_t kMaxLayers = 10000; /* deep circuits are errors */
 
  public:
-  // Serialize kBytesWritten bytes of a size or index used in the circuit to
+  // Serialize kBytesPerSizeT bytes of a size or index used in the circuit to
   // save space.
-  static constexpr size_t kBytesWritten = 3;
+  static constexpr size_t kBytesPerSizeT = 3;
+  static constexpr size_t kIdSize = 32;
 
   explicit CircuitRep(const Field& f, FieldID field_id)
       : f_(f), field_id_(field_id) {}
 
   void to_bytes(const Circuit<Field>& sc_c, std::vector<uint8_t>& bytes) {
-    EltHash eh(f_);
+    KvecBuilder<Field> kb(f_);
+    // Collect constants
+    for (const auto& layer : sc_c.l) {
+      for (const auto& ec : *layer.quad) {
+        kb.kstore(ec.v);
+      }
+    }
+
+    // Write header
     bytes.push_back(0x1);  // version
     serialize_field_id(bytes, field_id_);
     serialize_size(bytes, sc_c.nv);
@@ -92,36 +97,33 @@ class CircuitRep {
     serialize_size(bytes, sc_c.ninputs);
     serialize_size(bytes, sc_c.l.size());
 
-    // Scan the circuit to generate the constant table. To keep one
-    // scan, write the quad to a separate byte vector and later copy it.
-    std::vector<uint8_t> quadb;
-    quadb.reserve(1 << 24);
+    // Write kvec
+    auto kvec = kb.kvec();
+    serialize_size(bytes, kvec->size());
+    for (const auto& v : *kvec) {
+      serialize_elt(bytes, v, f_);
+    }
+
+    // Serialize layers and quads
     for (const auto& layer : sc_c.l) {
-      serialize_size(quadb, layer.logw);
-      serialize_size(quadb, layer.nw);
-      serialize_size(quadb, layer.quad->n_);
+      serialize_size(bytes, layer.logw);
+      serialize_size(bytes, layer.nw);
+      serialize_size(bytes, layer.quad->size());
 
       QuadCorner prevg(0), prevh0(0), prevh1(0);
-      for (size_t i = 0; i < layer.quad->n_; ++i) {
-        serialize_index(quadb, layer.quad->c_[i].g, prevg);
-        prevg = layer.quad->c_[i].g;
-        serialize_index(quadb, layer.quad->c_[i].h[0], prevh0);
-        prevh0 = layer.quad->c_[i].h[0];
-        serialize_index(quadb, layer.quad->c_[i].h[1], prevh1);
-        prevh1 = layer.quad->c_[i].h[1];
-        serialize_num(quadb, eh.kstore(layer.quad->c_[i].v));
+      for (const auto& ec : *layer.quad) {
+        serialize_index(bytes, ec.g, prevg);
+        serialize_index(bytes, ec.h[0], prevh0);
+        serialize_index(bytes, ec.h[1], prevh1);
+        serialize_num(bytes, kb.kload(ec.v));
+        prevg = ec.g;
+        prevh0 = ec.h[0];
+        prevh1 = ec.h[1];
       }
     }
 
-    serialize_size(bytes, eh.constants_.size());
-    for (const auto& v : eh.constants_) {
-      uint8_t buf[Field::kBytes];
-      f_.to_bytes_field(buf, v);
-      bytes.insert(bytes.end(), buf, buf + Field::kBytes);
-    }
-
-    bytes.insert(bytes.end(), quadb.begin(), quadb.end());
-    bytes.insert(bytes.end(), sc_c.id, sc_c.id + 32);
+    // Write circuit ID
+    bytes.insert(bytes.end(), sc_c.id, sc_c.id + kIdSize);
   }
 
   // Returns a unique_ptr<Circuit> or nullptr if there is an error in
@@ -131,7 +133,7 @@ class CircuitRep {
   // the serialization matches the id stored in the circuit.
   std::unique_ptr<Circuit<Field>> from_bytes(ReadBuffer& buf,
                                              bool enforce_circuit_id) {
-    if (!buf.have(8 * kBytesWritten + 1)) {
+    if (!buf.have(8 * kBytesPerSizeT + 1)) {
       return nullptr;
     }
 
@@ -161,14 +163,14 @@ class CircuitRep {
       return nullptr;
     }
 
-    std::vector<Elt> constants(numconst);
+    auto constants = std::make_shared<std::vector<Elt>>(numconst);
     for (size_t i = 0; i < numconst; ++i) {
       // Fail if Elt cannot be parsed.
       auto vv = f_.of_bytes_field(buf.next(Field::kBytes));
       if (!vv.has_value()) {
         return nullptr;
       }
-      constants[i] = vv.value();
+      (*constants)[i] = vv.value();
     }
 
     auto c = std::make_unique<Circuit<Field>>();
@@ -186,9 +188,13 @@ class CircuitRep {
 
     size_t max_g = nv;  // a starting bound on quad number
 
+    // Use an approximate delta table builder, preferring quick lookup at the
+    // cost of missing some deduplications.
+    ApproximateDeltaTableBuilder<Field> db(/*prime*/ 8209);
+
     for (size_t ly = 0; ly < nl; ++ly) {
       // Ensure there are enough input bytes for the layer, 3 values.
-      if (!buf.have(3 * kBytesWritten)) {
+      if (!buf.have(3 * kBytesPerSizeT)) {
         return nullptr;
       }
 
@@ -197,33 +203,34 @@ class CircuitRep {
       size_t nq = read_size(buf);
 
       // Each quad takes 4 values, check for overflow.
-      need = checked_mul(4 * kBytesWritten, nq);
+      need = checked_mul(4 * kBytesPerSizeT, nq);
       if (!need || !buf.have(need.value())) {
         return nullptr;
       }
 
-      auto qq = std::make_unique<Quad<Field>>(nq);
+      auto qq = std::make_unique<Quad<Field>>(nq, constants, db.delta_table());
       size_t prevg = 0, prevhl = 0, prevhr = 0;
       for (size_t i = 0; i < nq; ++i) {
         size_t g = read_index(buf, prevg);
         if (g > max_g) {  // index of quad must be < wires in the layer
           return nullptr;
         }
-        prevg = g;
         size_t hl = read_index(buf, prevhl);
         size_t hr = read_index(buf, prevhr);
         if (hl > nw || hr > nw) {
           return nullptr;
         }
-        prevhl = hl;
-        prevhr = hr;
         size_t vi = read_num(buf);
         if (vi >= numconst) {
           return nullptr;
         }
 
-        qq->c_[i] = typename Quad<Field>::corner{
-            QuadCorner(g), {QuadCorner(hl), QuadCorner(hr)}, constants[vi]};
+        qq->assign(
+            i, db.dedup(QuadCorner(g - prevg), QuadCorner(hl - prevhl),
+                        QuadCorner(hr - prevhr), static_cast<uint32_t>(vi)));
+        prevg = g;
+        prevhl = hl;
+        prevhr = hr;
       }
       c->l.push_back(Layer<Field>{
           .nw = nw,
@@ -232,15 +239,15 @@ class CircuitRep {
       max_g = nw;
     }
     // Read the circuit name from the serialization.
-    if (!buf.have(32)) {
+    if (!buf.have(kIdSize)) {
       return nullptr;
     }
-    buf.next(32, c->id);
+    buf.next(kIdSize, c->id);
 
     if (enforce_circuit_id) {
-      uint8_t idtmp[32];
+      uint8_t idtmp[kIdSize];
       circuit_id(idtmp, *c, f_);
-      if (memcmp(idtmp, c->id, 32) != 0) {
+      if (memcmp(idtmp, c->id, kIdSize) != 0) {
         return nullptr;
       }
     }
@@ -248,7 +255,7 @@ class CircuitRep {
   }
 
  private:
-  static constexpr uint64_t kMaxValue = (1ULL << (kBytesWritten * 8)) - 1;
+  static constexpr uint64_t kMaxValue = (1ULL << (kBytesPerSizeT * 8)) - 1;
 
   // Multiplies arguments and checks for overflow.
   template <typename T>
@@ -256,6 +263,13 @@ class CircuitRep {
     T ab = a * b;
     if (a == 0 || ab / a == b) return ab;
     return std::nullopt;
+  }
+
+  static void serialize_elt(std::vector<uint8_t>& bytes, const Elt& v,
+                            const Field& f) {
+    uint8_t buf[Field::kBytes];
+    f.to_bytes_field(buf, v);
+    bytes.insert(bytes.end(), buf, buf + Field::kBytes);
   }
 
   static void serialize_field_id(std::vector<uint8_t>& bytes, FieldID id) {
@@ -274,10 +288,10 @@ class CircuitRep {
   // phenomenon, but at least part of the reason is that the deltas
   // are usually smaller than the indices.
   //
-  static void serialize_index(std::vector<uint8_t>& bytes, QuadCorner ind0,
-                              QuadCorner prev_ind0) {
-    size_t ind = static_cast<size_t>(ind0);
-    size_t prev_ind = static_cast<size_t>(prev_ind0);
+  static void serialize_index(std::vector<uint8_t>& bytes, QuadCorner index,
+                              QuadCorner prev_index) {
+    size_t ind = static_cast<size_t>(index);
+    size_t prev_ind = static_cast<size_t>(prev_index);
 
     // Encode the delta IND - PREV_IND.  Since the delta can be
     // negative, and the rest of the code is unsigned only,
@@ -291,16 +305,16 @@ class CircuitRep {
 
   static void serialize_num(std::vector<uint8_t>& bytes, size_t g) {
     check(g < kMaxValue, "Violating small wire-label assumption");
-    uint8_t tmp[kBytesWritten];
-    for (size_t i = 0; i < kBytesWritten; ++i) {
+    uint8_t tmp[kBytesPerSizeT];
+    for (size_t i = 0; i < kBytesPerSizeT; ++i) {
       tmp[i] = static_cast<uint8_t>(g & 0xff);
       g >>= 8;
     }
-    bytes.insert(bytes.end(), tmp, tmp + kBytesWritten);
+    bytes.insert(bytes.end(), tmp, tmp + kBytesPerSizeT);
   }
 
   // These routine reads bytes written by serialize_* methods, and thus
-  // only needs to handle values expressed in kBytesWritten.
+  // only needs to handle values expressed in kBytesPerSizeT.
   // On 32b platforms, some large circuits may fail; this method
   // causes a failure in that case.
 
@@ -321,9 +335,9 @@ class CircuitRep {
 
   static size_t read_num(ReadBuffer& buf) {
     uint64_t r = 0;
-    const uint8_t* p = buf.next(kBytesWritten);
-    for (size_t i = 0; i < kBytesWritten; ++i) {
-      r |= (p[i] << (i * 8));
+    const uint8_t* p = buf.next(kBytesPerSizeT);
+    for (size_t i = 0; i < kBytesPerSizeT; ++i) {
+      r |= (static_cast<uint64_t>(p[i]) << (i * 8));
     }
 
     // SIZE_MAX is system defined as max value for size_t.
@@ -331,37 +345,6 @@ class CircuitRep {
     check(r < SIZE_MAX, "Violating small wire-label assumption");
     return static_cast<size_t>(r);
   }
-
-  // Class that defines the hash function for Elt.
-  class EHash {
-   public:
-    const Field& f_;
-    explicit EHash(const Field& f) : f_(f) {}
-    size_t operator()(const Elt& k) const { return elt_hash(k, f_); }
-  };
-
-  // This structure encapsulates the hash used by the compiler.
-  class EltHash {
-   public:
-    std::vector<Elt> constants_;
-
-    explicit EltHash(const Field& f) : f_(f), table_(1000, EHash(f)) {}
-
-    size_t kstore(const Elt& k) {
-      if (auto search = table_.find(k); search != table_.end()) {
-        return search->second;
-      }
-
-      size_t ki = constants_.size();
-      constants_.push_back(k);
-      table_[k] = ki;
-      return ki;
-    }
-
-   private:
-    const Field& f_;
-    std::unordered_map<Elt, size_t, EHash> table_;
-  };
 
   const Field& f_;
   FieldID field_id_;

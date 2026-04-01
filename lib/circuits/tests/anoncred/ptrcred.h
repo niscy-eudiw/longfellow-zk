@@ -108,9 +108,9 @@ class PtrCred {
     EltW base = lc_.konst(0x2);
     for (size_t i = 0; i < 32; ++i) {
       for (size_t j = 0; j < 8; ++j) {
-        auto t = lc_.mul(&h, base);
+        auto t = lc_.mul(h, base);
         auto tin = lc_.eval(in[ind + i][7 - j]);
-        h = lc_.add(&tin, t);
+        h = lc_.add(tin, t);
       }
     }
     return h;
@@ -138,8 +138,8 @@ class PtrCred {
     // DPK_{x,y}
     EltW dpkx = repack(vw.in_, 100);
     EltW dpky = repack(vw.in_, 132);
-    lc_.assert_eq(&dpkx, vw.dpkx_);
-    lc_.assert_eq(&dpky, vw.dpky_);
+    lc_.assert_eq(dpkx, vw.dpkx_);
+    lc_.assert_eq(dpky, vw.dpky_);
 
     // Attributes parsing
     const v8 zz = lc_.template vbit<8>(0xff);  // cannot appear in strings
@@ -158,7 +158,7 @@ class PtrCred {
     for (size_t j = 0; j < max; ++j) {
       auto ll = lc_.vlt(j, vlen);
       auto cmp = lc_.veq(got[j], want[j]);
-      lc_.assert_implies(&ll, cmp);
+      lc_.assert_implies(ll, cmp);
     }
   }
 

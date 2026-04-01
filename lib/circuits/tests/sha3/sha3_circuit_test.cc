@@ -23,7 +23,10 @@
 
 #include "algebra/convolution.h"
 #include "algebra/fp.h"
+#include "algebra/fp24.h"
+#include "algebra/fp24_6.h"
 #include "algebra/reed_solomon.h"
+#include "algebra/reed_solomon_extension.h"
 #include "arrays/dense.h"
 #include "circuits/compiler/circuit_dump.h"
 #include "circuits/compiler/compiler.h"
@@ -31,6 +34,7 @@
 #include "circuits/logic/evaluation_backend.h"
 #include "circuits/logic/logic.h"
 #include "circuits/tests/sha3/sha3_reference.h"
+#include "circuits/tests/sha3/sha3_slicing.h"
 #include "circuits/tests/sha3/sha3_witness.h"
 #include "circuits/tests/sha3/shake_test_vectors.h"
 #include "gf2k/gf2_128.h"
@@ -50,8 +54,9 @@
 
 namespace proofs {
 namespace {
-using Field = GF2_128<>;
-const Field F;
+using Field = Fp24_6;
+const Fp24 BaseF(8380417);
+const Field F(BaseF, /*beta=*/7);
 typedef CompilerBackend<Field> CompilerBackend;
 typedef Logic<Field, CompilerBackend> LogicCircuit;
 typedef LogicCircuit::BitW bitWC;
@@ -243,12 +248,14 @@ TEST(SHA3_Circuit, AssertShake256) {
     // Create circuit-compatible witnesses
     std::vector<Sha3Circuit<Logic>::BlockWitness> circuit_bws(bws.size());
     for (size_t k = 0; k < bws.size(); ++k) {
-      for (size_t i = 0; i < 6; ++i) {
-        for (size_t x = 0; x < 5; ++x) {
-          for (size_t y = 0; y < 5; ++y) {
-            for (size_t b = 0; b < 64; ++b) {
-              circuit_bws[k].a_intermediate[i][x][y][b] =
-                  L.bit((bws[k].a_intermediate[i][x][y] >> b) & 1);
+      for (size_t round = 0; round < 24; ++round) {
+        if (sha3_slice_at(round)) {
+          for (size_t x = 0; x < 5; ++x) {
+            for (size_t y = 0; y < 5; ++y) {
+              for (size_t b = 0; b < 64; ++b) {
+                circuit_bws[k].a_intermediate[round][x][y][b] =
+                    L.bit((bws[k].a_intermediate[round][x][y] >> b) & 1);
+              }
             }
           }
         }
@@ -309,7 +316,7 @@ std::unique_ptr<Circuit<Field>> make_shake256_circuit(size_t seed_size,
 
   EXPECT_EQ(out.size(), out_size);
   for (size_t i = 0; i < out_size; ++i) {
-    LC.vassert_eq(&want[i], out[i]);
+    LC.vassert_eq(want[i], out[i]);
   }
 
   auto CIRCUIT = Q.mkcircuit(1);
@@ -405,6 +412,18 @@ TEST(SHA3_Circuit, ZkProverAndVerifierTest_Fp64) {
   const RSFactory rs_factory(conv_factory, F);
 
   ShakeProverSystem<Field, RSFactory> sys(1, F, rs_factory);
+  EXPECT_TRUE(sys.Prove());
+  EXPECT_TRUE(sys.Verify());
+}
+
+TEST(SHA3_Circuit, ZkProverAndVerifierTest_Fp24_6) {
+  using Field = Fp24_6;
+  const Fp24 BaseF(8380417);
+  const Field F(BaseF, /*beta=*/7);
+
+  ReedSolomonExtensionFactory rsextf(BaseF);
+
+  ShakeProverSystem<Field, ReedSolomonExtensionFactory> sys(1, F, rsextf);
   EXPECT_TRUE(sys.Prove());
   EXPECT_TRUE(sys.Verify());
 }

@@ -178,14 +178,13 @@ class VerifierLayers {
 
       // bind QUAD[g|r,l] to the alpha-combination of the
       // two G values GR, GL
-      auto QUAD = clr->quad->clone();
-      QUAD->bind_g(cl->logv, cl->g[0], cl->g[1], challenge->alpha,
-                   challenge->beta, F);
+      auto EQUAD = clr->quad->bind_g(cl->logv, cl->g[0], cl->g[1],
+                                     challenge->alpha, challenge->beta, F);
 
       // bind QUAD[G|r,l] to R, L
       for (size_t round = 0; round < clr->logw; ++round) {
         for (size_t hand = 0; hand < 2; ++hand) {
-          QUAD->bind_h(challenge->hb[hand][round], hand, F);
+          EQUAD->bind_h(challenge->hb[hand][round], hand, F);
         }
       }
 
@@ -193,7 +192,7 @@ class VerifierLayers {
       // W[.,C] is in the proof.
       Elt got =
           Eq<Field>::eval(CIRCUIT->logc, CIRCUIT->nc, cl->q, challenge->cb, F);
-      F.mul(got, QUAD->scalar());
+      F.mul(got, EQUAD->scalar());
       F.mul(got, plr->wc[0]);
       F.mul(got, plr->wc[1]);
 

@@ -91,8 +91,16 @@ class Ripemd160Circuit {
     BitAdder<Logic, 32> BA(L);
 
     // Initialize state
-    v32 a = H0[0], b = H0[1], c = H0[2], d = H0[3], e = H0[4];
-    v32 aa = H0[0], bb = H0[1], cc = H0[2], dd = H0[3], ee = H0[4];
+    v32 a(H0[0]);
+    v32 b(H0[1]);
+    v32 c(H0[2]);
+    v32 d(H0[3]);
+    v32 e(H0[4]);
+    v32 aa(H0[0]);
+    v32 bb(H0[1]);
+    v32 cc(H0[2]);
+    v32 dd(H0[3]);
+    v32 ee(H0[4]);
 
     // Main loop: 5 rounds of 16 steps
     for (int round = 0; round < 5; ++round) {
@@ -107,18 +115,16 @@ class Ripemd160Circuit {
         // b_new = calc
         {
           auto f_val = f_round_left(round, b, c, d);
-          auto x_val = in[ripemd::RL[round][step]];
+          const v32& x_val = in[ripemd::RL[round][step]];
           auto k_val = L.vbit32(ripemd::KL[round]);
 
           // Verify left_temp[idx] == a + f_val + x_val + k_val
-          std::vector<v32> terms = {a, f_val, x_val, k_val};
-          BA.assert_eqmod(left_temp[idx], BA.add(terms), 4);  // 4 terms
+          BA.assert_eqmod(left_temp[idx], BA.add({a, f_val, x_val, k_val}), 4);
 
           auto rot_val = rol(left_temp[idx], ripemd::SL[round][step]);
 
           // Verify left_calc[idx] == rot_val + e
-          std::vector<v32> terms2 = {rot_val, e};
-          BA.assert_eqmod(left_calc[idx], BA.add(terms2), 2);
+          BA.assert_eqmod(left_calc[idx], BA.add({rot_val, e}), 2);
 
           // Update left state
           a = e;
@@ -131,18 +137,17 @@ class Ripemd160Circuit {
         // Right path
         {
           auto f_val = f_round_right(round, bb, cc, dd);
-          auto x_val = in[ripemd::RR[round][step]];
+          const v32& x_val = in[ripemd::RR[round][step]];
           auto k_val = L.vbit32(ripemd::KR[round]);
 
           // Verify right_temp[idx] == aa + f_val + x_val + k_val
-          std::vector<v32> terms = {aa, f_val, x_val, k_val};
-          BA.assert_eqmod(right_temp[idx], BA.add(terms), 4);
+          BA.assert_eqmod(right_temp[idx], BA.add({aa, f_val, x_val, k_val}),
+                          4);
 
           auto rot_val = rol(right_temp[idx], ripemd::SR[round][step]);
 
           // Verify right_calc[idx] == rot_val + ee
-          std::vector<v32> terms2 = {rot_val, ee};
-          BA.assert_eqmod(right_calc[idx], BA.add(terms2), 2);
+          BA.assert_eqmod(right_calc[idx], BA.add({rot_val, ee}), 2);
 
           // Update right state
           aa = ee;
@@ -161,26 +166,11 @@ class Ripemd160Circuit {
     // H1[3] = H0[4] + a + bb
     // H1[4] = H0[0] + b + cc
 
-    {
-      std::vector<v32> terms = {H0[1], c, dd};
-      BA.assert_eqmod(H1[0], BA.add(terms), 3);
-    }
-    {
-      std::vector<v32> terms = {H0[2], d, ee};
-      BA.assert_eqmod(H1[1], BA.add(terms), 3);
-    }
-    {
-      std::vector<v32> terms = {H0[3], e, aa};
-      BA.assert_eqmod(H1[2], BA.add(terms), 3);
-    }
-    {
-      std::vector<v32> terms = {H0[4], a, bb};
-      BA.assert_eqmod(H1[3], BA.add(terms), 3);
-    }
-    {
-      std::vector<v32> terms = {H0[0], b, cc};
-      BA.assert_eqmod(H1[4], BA.add(terms), 3);
-    }
+    BA.assert_eqmod(H1[0], BA.add({H0[1], c, dd}), 3);
+    BA.assert_eqmod(H1[1], BA.add({H0[2], d, ee}), 3);
+    BA.assert_eqmod(H1[2], BA.add({H0[3], e, aa}), 3);
+    BA.assert_eqmod(H1[3], BA.add({H0[4], a, bb}), 3);
+    BA.assert_eqmod(H1[4], BA.add({H0[0], b, cc}), 3);
   }
 
   // Packed API
@@ -226,15 +216,15 @@ class Ripemd160Circuit {
   }
 
   // Returns the length of the message in bits.
-  v64 find_len(size_t max, const v8 in[/*64*max*/], const v8 nb) const {
+  v64 find_len(size_t max, const v8 in[/*64*max*/], const v8& nb) const {
     const Logic& L = l_;
     v64 len = L.template vbit<64>(0);
     for (size_t i = 0; i < max; ++i) {
       auto isblk = L.veq(nb, i + 1);  // If nb == i, i is zero-indexed.
       size_t ind = i * 64 + 63;
       for (size_t j = 0; j < 64; ++j) { /* this loop is over bits */
-        len[j] = L.lor_exclusive(&len[j],
-                                 L.land(&isblk, in[ind - 7 + j / 8][j % 8]));
+        len[j] =
+            L.lor_exclusive(len[j], L.land(isblk, in[ind - 7 + j / 8][j % 8]));
       }
     }
     L.vassert_is_bit(len);
@@ -293,10 +283,10 @@ class Ripemd160Circuit {
       for (size_t i = 0; i < 5; ++i) {
         for (size_t k = 0; k < bp_.kNv32Elts; ++k) {
           if (b == 0) {
-            x[i][k] = L.mul(&ebt, bw[b].h_out[i][k]);
+            x[i][k] = L.mul(ebt, bw[b].h_out[i][k]);
           } else {
-            auto maybe_h = L.mul(&ebt, bw[b].h_out[i][k]);
-            x[i][k] = L.add(&x[i][k], maybe_h);
+            auto maybe_h = L.mul(ebt, bw[b].h_out[i][k]);
+            x[i][k] = L.add(x[i][k], maybe_h);
           }
         }
       }
@@ -311,10 +301,10 @@ class Ripemd160Circuit {
         mm[j * 32 + k] = hj[k];
       }
     }
-    L.vassert_eq(&mm, e);
+    L.vassert_eq(mm, e);
   }
 
-  void assert_zero_padding(size_t max, const v8 nb,
+  void assert_zero_padding(size_t max, const v8& nb,
                            const v8 in[/*64 * max*/]) const {
     const Logic& L = l_;
     for (size_t i = 0; i < max; ++i) {
@@ -322,7 +312,7 @@ class Ripemd160Circuit {
       for (size_t j = 0; j < 64; ++j) {
         size_t ind = i * 64 + j;
         auto zero = L.veq(in[ind], 0);
-        L.assert_implies(&wantzero, zero);
+        L.assert_implies(wantzero, zero);
       }
     }
   }
@@ -330,24 +320,24 @@ class Ripemd160Circuit {
   v32 rol(const v32& x, int n) const { return l_.vrotl(x, n); }
 
   v32 f1(const v32& x, const v32& y, const v32& z) const {
-    return l_.vxor3(&x, &y, z);
+    return l_.vxor3(x, y, z);
   }
 
   v32 f2(const v32& x, const v32& y, const v32& z) const {
     // (x & y) | (~x & z)
-    return l_.vCh(&x, &y, z);
+    return l_.vCh(x, y, z);
   }
 
   v32 f3(const v32& x, const v32& y, const v32& z) const {
     // (x | ~y) ^ z
     auto noty = l_.vnot(y);
-    auto xsuby = l_.vor(&x, noty);
-    return l_.vxor(&xsuby, z);
+    auto xsuby = l_.vor(x, noty);
+    return l_.vxor(xsuby, z);
   }
 
   v32 f4(const v32& x, const v32& y, const v32& z) const {
     // (x & z) | (y & ~z)
-    return l_.vCh(&z, &x, y);
+    return l_.vCh(z, x, y);
   }
 
   v32 f5(const v32& x, const v32& y, const v32& z) const {
@@ -370,7 +360,7 @@ class Ripemd160Circuit {
         return f5(x, y, z);
     }
     check(false, "Invalid round");
-    return x;
+    return v32(x);
   }
 
   v32 f_round_right(int round, const v32& x, const v32& y, const v32& z) const {
@@ -387,7 +377,7 @@ class Ripemd160Circuit {
         return f1(x, y, z);
     }
     check(false, "Invalid round");
-    return x;
+    return v32(x);
   }
 
   void initial_context(v32 H[5]) const {

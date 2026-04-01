@@ -106,6 +106,22 @@ class Nat : public Limb<W64> {
     return r;
   }
 
+  // Interpret A[] as a little-endian nat, masking the top bits to
+  // return a value in the range [0, 2^nbits - 1].
+  static T of_bytes(const uint8_t a[], size_t nbits) {
+    T r;
+    for (size_t i = 0; i < kLimbs; ++i) {
+      a = Super::of_bytes(&r.limb_[i], a);
+      if (nbits >= Super::kBitsPerLimb) {
+        nbits -= Super::kBitsPerLimb;
+      } else {
+        r.limb_[i] &= (limb_t{1} << nbits) - 1;
+        nbits = 0;
+      }
+    }
+    return r;
+  }
+
   static std::optional<unsigned> safe_digit(char c, limb_t base) {
     c = tolower(c);
     if (c >= '0' && c <= '9') {

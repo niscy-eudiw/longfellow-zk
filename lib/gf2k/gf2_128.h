@@ -20,6 +20,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <utility>
 
@@ -170,6 +171,25 @@ class GF2_128 {
 
   void to_bytes_field(uint8_t ab[/* kBytes */], const Elt& x) const {
     x.unpack().to_bytes(ab);
+  }
+
+  Elt sample(
+      const std::function<void(size_t n, uint8_t buf[])>& fill_bytes) const {
+    // Every 128-bit sequence is a valid field element.
+    uint8_t buf[kBytes];
+    fill_bytes(sizeof(buf), buf);
+    std::optional<Elt> maybe = of_bytes_field(buf);
+    check(maybe.has_value(), "of_bytes_field failed unexpectedly");
+    return maybe.value();
+  }
+
+  Elt sample_subfield(
+      const std::function<void(size_t n, uint8_t buf[])>& fill_bytes) const {
+    uint8_t buf[kSubFieldBytes];
+    fill_bytes(sizeof(buf), buf);
+    std::optional<Elt> maybe = of_bytes_subfield(buf);
+    check(maybe.has_value(), "of_bytes_subfield failed unexpectedly");
+    return maybe.value();
   }
 
   bool in_subfield(Elt e) const {

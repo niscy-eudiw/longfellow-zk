@@ -296,7 +296,7 @@ class MdocHash {
     return bbuf;
   }
 
-  vind extract_vind(v64 len) const {
+  vind extract_vind(const v64& len) const {
     auto low = lc_.template slice<0, 3>(len);
     auto mid = lc_.template slice<3, 3 + kCborIndexBits>(len);
     auto hi = lc_.template slice<3 + kCborIndexBits, 64>(len);
@@ -313,17 +313,17 @@ class MdocHash {
 
   // Checks that the index is less than the length. The len is given as bits
   // in a v64 in big endian order, and the index is given as a byte index.
-  void check_index(vind index, v64 len) const {
+  void check_index(const vind& index, const v64& len) const {
     lc_.vassert_is_bit(index);
     auto mid = extract_vind(len);
-    lc_.assert1(lc_.vlt(&index, mid));
+    lc_.assert1(lc_.vlt(index, mid));
   }
 
   void assert_bytes_at(size_t len, const v8 buf[/*>=len*/],
                        const uint8_t want[/*len*/]) const {
     for (size_t i = 0; i < len; ++i) {
       auto want_i = lc_.template vbit<8>(want[i]);
-      lc_.vassert_eq(&buf[i], want_i);
+      lc_.vassert_eq(buf[i], want_i);
     }
   }
 
@@ -367,7 +367,7 @@ class MdocHash {
       // header byte, or in the next byte.  The array length is < 256 by
       // external constraints, and thus its length is in 1 or 2 bytes.
       for (size_t j = 0; j < 8; ++j) {
-        l1[j] = lc_.mux(&cbor.length_plus_next_v8, &buf[val_hdr_index + 1][j],
+        l1[j] = lc_.mux(cbor.length_plus_next_v8, buf[val_hdr_index + 1][j],
                         j < 5 ? buf[val_hdr_index][j] : lc_.bit(0));
       }
       lc_.vmux(cbor.length_plus_next_v8, l2, two, one);
@@ -376,7 +376,7 @@ class MdocHash {
       // because the digestID is constrained to be < 2^31 [18013-5, 9.1.2.4].
       lc_.assert0(cbor.count27);
       l2[2] = cbor.count26;
-      l2[1] = lc_.lor(&cbor.count24, cbor.count25);
+      l2[1] = lc_.lor(cbor.count24, cbor.count25);
       l2[0] = lc_.lnot(cbor.count24);
     }
 
@@ -390,7 +390,8 @@ class MdocHash {
   // assert_attribute checks that the bytes in buf correspond to a valid
   // cbor structure that encodes the OpenedAttribute oa.
   void assert_attribute(size_t max, const v8 buf[/*max*/], const SaltedHash& sh,
-                        const OpenedAttribute& oa, const v64 salted_len) const {
+                        const OpenedAttribute& oa,
+                        const v64& salted_len) const {
     // Perform a cbor parsing of the buffer, which is expected to be
     // a 4-element key-value array consisting of keys digestId, random,
     // elementIdentifier, and elementValue. Then perform a check on the
@@ -456,12 +457,12 @@ class MdocHash {
       auto ll = lc_.vlt(j, oa.len);
       for (size_t i = 0; i < 8; ++i) {
         auto same = lc_.eq(1, &got[j][i], &want_ei[j][i]);
-        lc_.assert_implies(&ll, same);
+        lc_.assert_implies(ll, same);
       }
     }
     v8 tmp;
     std::copy(len.begin(), len.begin() + 8, tmp.begin());  // cast vind into v8.
-    lc_.vassert_eq(&tmp, oa.len);
+    lc_.vassert_eq(tmp, oa.len);
 
     // "elementValue" checks the full cbor key-value, because it is public.
     mux_offset(3, shift, len, sh);
@@ -470,11 +471,11 @@ class MdocHash {
       auto ll = lc_.vlt(j, oa.vlen);
       for (size_t i = 0; i < 8; ++i) {
         auto same = lc_.eq(1, &got[j][i], &want_ev[j][i]);
-        lc_.assert_implies(&ll, same);
+        lc_.assert_implies(ll, same);
       }
     }
     std::copy(len.begin(), len.begin() + 8, tmp.begin());  // cast vind into v8.
-    lc_.vassert_eq(&tmp, oa.vlen);
+    lc_.vassert_eq(tmp, oa.vlen);
   }
 
   void mux_offset(size_t slot, vind& shift, vind& len,
@@ -491,12 +492,12 @@ class MdocHash {
   }
 
   // Asserts that the key is equal to the value in big-endian order in buf_be.
-  void assert_key(v256 key, const v8 buf_be[/*32*/]) const {
+  void assert_key(const v256& key, const v8 buf_be[/*32*/]) const {
     v256 m;
     for (size_t i = 0; i < 256; ++i) {
       m[i] = buf_be[31 - (i / 8)][i % 8];
     }
-    lc_.vassert_eq(&m, key);
+    lc_.vassert_eq(m, key);
   }
 
   // The constants below define the prefix of each field that is verified

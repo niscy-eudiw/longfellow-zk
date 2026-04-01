@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "algebra/convolution.h"
@@ -362,7 +363,7 @@ TEST(jwt, EvalJWT) {
       oa2i.pattern[pi] = L.vbit<8>(0);
     }
 
-    oa2.push_back(oa2i);
+    oa2.push_back(std::move(oa2i));
   }
 
   EXPECT_TRUE(rvw.compute_witness(jwt, pkX, pkY, t0.attrs));
@@ -409,7 +410,7 @@ std::unique_ptr<Circuit<Fp256Base>> make_circuit(const Fp256Base& f) {
   for (size_t i = 0; i < 1; ++i) {
     typename JWTC::OpenedAttribute oa2i;
     oa2i.input(lc);
-    oa.push_back(oa2i);
+    oa.push_back(std::move(oa2i));
   }
   Q.private_input();
   typename JWTC::Witness vwc;

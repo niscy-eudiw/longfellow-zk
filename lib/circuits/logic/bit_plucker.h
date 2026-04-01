@@ -208,8 +208,8 @@ class EltMuxer {
       PolyN basis_i = even_lagrange_basis(i);
       for (size_t j = 0; j < kN; ++j) {
         auto bi = l_.konst(basis_i[j]);
-        auto barr_i = l_.mul(&bi, arr[i]);
-        coeff_[j] = l_.add(&coeff_[j], barr_i);
+        auto barr_i = l_.mul(bi, arr[i]);
+        coeff_[j] = l_.add(coeff_[j], barr_i);
       }
     }
   }
@@ -223,8 +223,8 @@ class EltMuxer {
     // dot product with coefficients
     EltW r = l_.konst(0);
     for (size_t i = 0; i < kN; ++i) {
-      auto cxi = l_.mul(&coeff_[i], xi[i]);
-      r = l_.add(&r, cxi);
+      auto cxi = l_.mul(coeff_[i], xi[i]);
+      r = l_.add(r, cxi);
     }
     return r;
   }

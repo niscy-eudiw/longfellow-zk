@@ -16,7 +16,6 @@
 
 #include <stddef.h>
 
-#include <vector>
 
 #include "algebra/fp_p128.h"
 #include "circuits/logic/evaluation_backend.h"
@@ -47,9 +46,8 @@ void test_bit_adder() {
           BV ec = L.template vbit<w>(c);
           BV es = L.template vbit<w>(s);
 
-          std::vector<BV> terms = {ea, eb, ec};
           BitAdder<Logic, w> BA(L);
-          BA.assert_eqmod(es, BA.add(terms), 3);
+          BA.assert_eqmod(es, BA.add({ea, eb, ec}), 3);
           EXPECT_EQ(ebk.assertion_failed(), (((a + b + c) ^ s) & mask) != 0);
         }
       }

@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 #include "circuits/mdoc/mdoc_examples.h"

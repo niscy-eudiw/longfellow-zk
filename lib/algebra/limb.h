@@ -33,6 +33,9 @@ class Limb {
   using T = Limb<W64>;
 
 #if __WORDSIZE == 64
+  // Use the native word size as the limb size.  However, changing
+  // limb_t to uint32_t is expected to work at least on x86_64, as a
+  // way to test 32-bit arithmetic without cross-compiling
   using limb_t = uint64_t;
 #else
   using limb_t = uint32_t;

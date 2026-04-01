@@ -596,8 +596,7 @@ void BM_ShaZK_quadbind_fp2_128(benchmark::State& state) {
   for (auto s : state) {
     size_t logv = CIRCUIT->logv;
     for (size_t ly = 0; ly < CIRCUIT->nl; ++ly) {
-      auto QUAD = CIRCUIT->l[ly].quad->clone();
-      QUAD->bind_g(logv, g0, g1, alpha, beta, Fs);
+      auto HQUAD = CIRCUIT->l[ly].quad->bind_g(logv, g0, g1, alpha, beta, Fs);
       logv = CIRCUIT->l[ly].logw;
     }
   }

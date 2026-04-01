@@ -21,34 +21,7 @@
 //  3. All arguments required to execute run_mdoc_verifier from Longfellow ZK library
 //     are prepared (see VerifyRequest format)
 //
-// The parser supports both the ISO 18013-5 Second Edition ZKDocument as well as
-// "original version" used by Google Wallet before the standard was created
-//
-// ISO 18013-5 Second Edition can be found in https://github.com/ISOWG10/ISO-18013/tree/main/Working%20Documents
-//
-// The "original version" has the following structure:
-//
-// ZkDeviceResponse
-//
-//	└── zkDocuments : [ZkDocument]+
-//	    │ └── ZkDocument
-//	    │ │ ├── docType : DocType
-//	    │ │ ├── zkSystemType: ZkSpec
-//	    │ │ │ └── ZkSpec
-//	    │ │ │ ├── system : string
-//	    │ │ │ └── params : ZkParams
-//	    | │ │ │ └── ZkParams
-//	    | │ │ │ ├── version : uint
-//	    | │ │ │ └── circuitHash : string
-//	    | │ │ │ └── numAttributes : uint
-//	    │ │ ├── timestamp : full-date
-//	    │ │ ├── ? issuerSigned : NameSpace => [ZkSignedItem]+
-//	    │ │ │ └── ZkSignedItem
-//	    │ │ │ ├── elementIdentifier : DataElementIdentifier
-//	    │ │ │ └── elementValue : DataElementValue
-//	    │ │ └── ? msoX5chain : COSE_X509
-//	    │ └── proof : bstr
-//
+// The parser supports both the ISO 18013-5 Second Edition ZKDocument.
 // For more information about CBOR, COSE and other standards see
 // https://github.com/ISOWG10/ISO-18013/tree/main/Working%20Documents
 package zk
@@ -149,57 +122,6 @@ func LoadIssuerRootCA(rootPem []byte) error {
 	return nil
 }
 
-// Convert the ZKDeviceResponse in original format to a VerifyRequest
-func ProcessDeviceResponseOriginal(b []byte) (*VerifyRequest, error) {
-	log.Printf("processing ZKDeviceResponse in original format")
-	var dr zkDeviceResponse
-	if err := cbor.Unmarshal(b, &dr); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal original ZkDeviceResponse: %w", err)
-	}
-	if len(dr.ZKDocuments) != 1 {
-		return nil, fmt.Errorf("expected 1 zkdocument, got %d", len(dr.ZKDocuments))
-	}
-
-	var zkd zkDocument
-	if err := cbor.Unmarshal(dr.ZKDocuments[0], &zkd); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal zkdocument: %w", err)
-	}
-
-	if err := validateRequest(&zkd); err != nil {
-		return nil, err
-	}
-
-	x509b, ok := zkd.MsoX5chain.Unprotected[X5ChainIndex]
-	if !ok {
-		return nil, errors.New("x509 cert not found in unprotected header")
-	}
-	pkx, pky, err := validateIssuerKey(x509b)
-	if err != nil {
-		return nil, err
-	}
-
-	namespace, attrs, err := extractAttributes(&zkd)
-	if err != nil {
-		return nil, err
-	}
-
-	namespaceList, idList, cborValList := buildAttributeLists(namespace, attrs)
-
-	return &VerifyRequest{
-		System:                zkd.ZKSystemType.System,
-		CircuitID:             zkd.ZKSystemType.Params.CircuitHash,
-		Pkx:                   pkx,
-		Pky:                   pky,
-		Now:                   zkd.Timestamp,
-		DocType:               zkd.DocType,
-		AttributeNamespaceIDs: namespaceList,
-		AttributeIDs:          idList,
-		AttributeCborValues:   cborValList,
-		Proof:                 zkd.Proof,
-		Claims:                zkd.IssuerSigned,
-	}, nil
-}
-
 func getFirstCert(msoX5chain any) ([]byte, error) {
 	switch v := msoX5chain.(type) {
 	case []byte:
@@ -276,32 +198,11 @@ func ProcessDeviceResponseISO(b []byte) (*VerifyRequest, error) {
 
 // ProcessDeviceResponse processes the CBOR-encoded device response and returns a VerifyRequest.
 func ProcessDeviceResponse(b []byte) (*VerifyRequest, error) {
-	// We can receive response is either origial or ISO format, try the original first
 	var dr zkDeviceResponseIso
-	if err := cbor.Unmarshal(b, &dr); err != nil {
-		// if this didin't work, try original Google format. This part can be removed when Google Wallet switches to the ISO format.
-		return ProcessDeviceResponseOriginal(b)
-	} else {
+	if err := cbor.Unmarshal(b, &dr); err == nil {
 		return ProcessDeviceResponseISO(b)
 	}
-}
-
-func extractAttributes(zkd *zkDocument) (string, []zkSignedItem, error) {
-	if len(zkd.IssuerSigned) != 1 {
-		return "", nil, fmt.Errorf("expected 1 namespace, got %d", len(zkd.IssuerSigned))
-	}
-
-	var namespace string
-	for k := range zkd.IssuerSigned {
-		namespace = k
-		break
-	}
-
-	attrs, ok := zkd.IssuerSigned[namespace]
-	if !ok {
-		return "", nil, fmt.Errorf("cannot extract attributes from namespace %s", namespace)
-	}
-	return namespace, attrs, nil
+	return nil, errors.ErrUnsupported
 }
 
 func extractAttributesIso(issuerSigned IssuerSigned) (string, []zkSignedItem, error) {
@@ -334,29 +235,6 @@ func buildAttributeLists(namespace string, attrs []zkSignedItem) ([]string, []st
 	return namespaceList, idList, cborValList
 }
 
-func validateRequest(doc *zkDocument) error {
-	if doc.ZKSystemType.System != LONGFELLOW_V1 {
-		return fmt.Errorf("incorrect system: got %s, want %s", doc.ZKSystemType.System, LONGFELLOW_V1)
-	}
-	if len(doc.ZKSystemType.Params.CircuitHash) != 64 {
-		return fmt.Errorf("invalid circuit_hash length: got %d, want 64", len(doc.ZKSystemType.Params.CircuitHash))
-	}
-	if doc.ZKSystemType.Params.NumAttributes < 1 || doc.ZKSystemType.Params.NumAttributes > 4 {
-		return fmt.Errorf("invalid num_attributes: got %d, want 1-4", doc.ZKSystemType.Params.NumAttributes)
-	}
-	if len(doc.Timestamp) != TIMESTAMP_LEN {
-		return fmt.Errorf("invalid timestamp length: got %d, want %d", len(doc.Timestamp), TIMESTAMP_LEN)
-	}
-	if len(doc.Proof) == 0 {
-		return errors.New("proof is empty")
-	}
-	if len(doc.DocType) == 0 {
-		return errors.New("doctype is empty")
-	}
-
-	return nil
-}
-
 func validateRequestIso(doc *zkDocumentIso, zkdata *zkDocumentDataIso) error {
 	if len(zkdata.ZkSystemId) == 0 {
 		return fmt.Errorf("Missing ZkSystemId")
@@ -378,6 +256,7 @@ func validateRequestIso(doc *zkDocumentIso, zkdata *zkDocumentDataIso) error {
 //  2. The first cert, i.e., the signer's cert, uses ECDSA keys with P256
 //  3. The certificate chain verifies against the IssuerRoots.
 func validateIssuerKey(x509b []byte) (string, string, error) {
+
 	certs, err := x509.ParseCertificates(x509b)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to parse certificates: %w", err)
@@ -387,6 +266,9 @@ func validateIssuerKey(x509b []byte) (string, string, error) {
 	}
 
 	signer := certs[0]
+	log.Printf("Signer Subject:      %s\n", signer.Subject)
+	log.Printf("Signer Issuer:       %s\n", signer.Issuer)
+	log.Printf("Signer Serial Number: %s\n", signer.SerialNumber)
 
 	if signer.PublicKeyAlgorithm != x509.ECDSA {
 		return "", "", errors.New("only ECDSA signatures are supported")

@@ -79,8 +79,8 @@ class CborByteDecoder {
 
     s.specialp = L.veq(type, 7);
     s.tagp = L.veq(type, 6);
-    s.arrayp = L.land(&s.itemsp, L.lnot(type[0]));
-    s.mapp = L.land(&s.itemsp, type[0]);
+    s.arrayp = L.land(s.itemsp, L.lnot(type[0]));
+    s.mapp = L.land(s.itemsp, type[0]);
 
     // count0_23 = (0 <= count < 24) = ~(count == 11xxx)
     s.count0_23 = L.lnot(L.veqmask(count, /*mask*/ 0b11000, /*val*/ 0b11000));
@@ -92,7 +92,7 @@ class CborByteDecoder {
     s.count27 = L.veq(count, 27);
 
     BitW count20_23 = L.veqmask(count, /*mask*/ 0b11100, /*val*/ 0b10100);
-    s.simple_specialp = L.land(&s.specialp, count20_23);
+    s.simple_specialp = L.land(s.specialp, count20_23);
 
     // stringp && count24
     s.length_plus_next_v8 =
@@ -102,14 +102,14 @@ class CborByteDecoder {
     s.count_is_next_v8 =
         L.veqmask(v, /*mask*/ 0b110'11111, /*val*/ 0b100'11000);
 
-    BitW count0_24 = L.lor_exclusive(&s.count24, s.count0_23);
-    BitW atom_or_tag = L.lor_exclusive(&s.atomp, s.tagp);
+    BitW count0_24 = L.lor_exclusive(s.count24, s.count0_23);
+    BitW atom_or_tag = L.lor_exclusive(s.atomp, s.tagp);
 
     // count0_24 works for all types (except invalid special)
     // but atom_or_tag supports count <= 27
-    BitW good_count = L.lor(&count0_24, L.land(&atom_or_tag, s.count24_27));
-    BitW invalid_special = L.land(&s.specialp, L.lnot(s.simple_specialp));
-    s.invalid = L.lor(&invalid_special, L.lnot(good_count));
+    BitW good_count = L.lor(count0_24, L.land(atom_or_tag, s.count24_27));
+    BitW invalid_special = L.land(s.specialp, L.lnot(s.simple_specialp));
+    s.invalid = L.lor(invalid_special, L.lnot(good_count));
 
     s.count_as_counter = ctr_.as_counter(count);
 
@@ -121,18 +121,18 @@ class CborByteDecoder {
     CEltW l2 = ctr_.as_counter(1 + 2);
     CEltW l4 = ctr_.as_counter(1 + 4);
     CEltW l8 = ctr_.as_counter(1 + 8);
-    CEltW l24_25 = ctr_.mux(&count[0], &l2, l1);
-    CEltW l26_27 = ctr_.mux(&count[0], &l8, l4);
-    CEltW l24_27 = ctr_.mux(&count[1], &l26_27, l24_25);
+    CEltW l24_25 = ctr_.mux(count[0], l2, l1);
+    CEltW l26_27 = ctr_.mux(count[0], l8, l4);
+    CEltW l24_27 = ctr_.mux(count[1], l26_27, l24_25);
 
     // choose between count0_23 and count24_27
     CEltW x1 = ctr_.as_counter(1);
-    s.length = ctr_.mux(&s.count0_23, &x1, l24_27);
+    s.length = ctr_.mux(s.count0_23, x1, l24_27);
 
     // adjust for strings
-    BitW str_23 = L.land(&s.stringp, s.count0_23);
-    CEltW adjust_if_string = ctr_.ite0(&str_23, s.count_as_counter);
-    s.length = ctr_.add(&s.length, adjust_if_string);
+    BitW str_23 = L.land(s.stringp, s.count0_23);
+    CEltW adjust_if_string = ctr_.ite0(str_23, s.count_as_counter);
+    s.length = ctr_.add(s.length, adjust_if_string);
 
     s.as_counter = ctr_.as_counter(v);
     s.as_scalar = L.as_scalar(v);

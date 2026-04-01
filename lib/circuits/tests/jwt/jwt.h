@@ -136,10 +136,10 @@ class JWT {
     auto twok = lc_.one();
     auto est = lc_.konst(0);
     for (size_t i = 0; i < 256; ++i) {
-      est = lc_.axpy(&est, twok, lc_.eval(vw.e_bits_[i]));
+      est = lc_.axpy(est, twok, lc_.eval(vw.e_bits_[i]));
       lc_.f_.add(twok, twok);
     }
-    lc_.assert_eq(&est, vw.e_);
+    lc_.assert_eq(est, vw.e_);
 
     // Assert the attribute equality
     const v8 zz = lc_.template vbit<8>(0);  // cannot appear in strings
@@ -173,7 +173,7 @@ class JWT {
     for (size_t j = 0; j < max; ++j) {
       auto ll = lc_.vlt(j, len);
       auto same = lc_.eq(8, got[j].data(), want[j].data());
-      lc_.assert_implies(&ll, same);
+      lc_.assert_implies(ll, same);
     }
   }
 

@@ -50,7 +50,7 @@ void test_each_symbol(const Field& F) {
     if (ind != std::string::npos) {
       want = L.template vbit<6>(ind);
       bd.decode(in, out);
-      EXPECT_EQ(L.eval(L.veq(&out, want)), L.konst(1));
+      EXPECT_EQ(L.eval(L.veq(out, want)), L.konst(1));
     } else {
       bd.decode(in, out);
       bool failed = ebk.assertion_failed();
@@ -95,7 +95,7 @@ void test_strings(const Field& F) {
     }
     bd.base64_rawurl_decode(inp.data(), got.data(), n);
     for (size_t i = 0; i < on; ++i) {
-      EXPECT_EQ(L.eval(L.veq(&got[i], L.template vbit<8>(tc.want[i]))),
+      EXPECT_EQ(L.eval(L.veq(got[i], L.template vbit<8>(tc.want[i]))),
                 L.konst(1));
     }
   }

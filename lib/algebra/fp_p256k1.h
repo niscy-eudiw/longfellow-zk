@@ -39,6 +39,7 @@ struct Fp256k1Reduce {
       0xFFFFFFFFFFFFFFFFu,
   };
 
+#ifndef SYSDEP_MULQ64_NOT_DEFINED
   static inline void reduction_step(uint64_t a[], uint64_t mprime,
                                     const Nat<4>& m) {
     // This step computes a += (mprime * a0) * p
@@ -84,6 +85,7 @@ struct Fp256k1Reduce {
     // Since we are adding u (one limb) to a[4], the carry will at most be 1.
     accum(2, a + 4, 1, h);
   }
+#endif
 
   static inline void reduction_step(uint32_t a[], uint32_t mprime,
                                     const Nat<4>& m) {

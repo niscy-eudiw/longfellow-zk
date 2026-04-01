@@ -22,6 +22,8 @@
 #include <vector>
 
 #include "algebra/fp.h"
+#include "algebra/fp24.h"
+#include "gf2k/gf2_128.h"
 #include "random/secure_random_engine.h"
 #include "random/transcript.h"
 #include "gtest/gtest.h"
@@ -120,6 +122,62 @@ TEST(Random, FSPRF) {
   Transcript ts((uint8_t *)"test", 4);
   test_all(&ts);
   test_mask(&ts);
+}
+
+TEST(Random, SmallPrime24Bit) {
+  // 24-bit prime: 2^24 - 3
+  typedef Fp<1> Field24;
+  Field24 F("16777213");
+  SecureRandomEngine e;
+  constexpr size_t N = 100;
+  for (size_t i = 0; i < N; ++i) {
+    Field24::Elt x = e.elt(F);
+    EXPECT_LT(x.n, F.m_);
+    x = e.subfield_elt(F);
+    EXPECT_LT(x.n, F.m_);
+  }
+}
+
+TEST(Random, Fp24) {
+  // 24-bit prime: 2^24 - 3
+  Fp24 F(8380417);
+  SecureRandomEngine e;
+  constexpr size_t N = 100;
+  for (size_t i = 0; i < N; ++i) {
+    Fp24::Elt x = e.elt(F);
+    EXPECT_LT(x.n, F.m_);
+    x = e.subfield_elt(F);
+    EXPECT_LT(x.n, F.m_);
+  }
+}
+
+TEST(Random, LargePrime80Bit) {
+  // 80-bit prime: 2^80 - 65
+  typedef Fp<2> Field80;
+  Field80 F("1208925819614629174706111");
+  SecureRandomEngine e;
+  constexpr size_t N = 100;
+  for (size_t i = 0; i < N; ++i) {
+    Field80::Elt x = e.elt(F);
+    EXPECT_LT(x.n, F.m_);
+    x = e.subfield_elt(F);
+    EXPECT_LT(x.n, F.m_);
+  }
+}
+
+TEST(Random, GF2_128) {
+  typedef GF2_128<> FieldGF;
+  FieldGF F;
+  SecureRandomEngine e;
+  constexpr size_t N = 100;
+  for (size_t i = 0; i < N; ++i) {
+    FieldGF::Elt x = e.elt(F);
+    // Every array of 128 bits is a valid element of GF2_128.
+    // The main point here is verifying `elt` compiles.
+    EXPECT_TRUE(x == x);
+    x = e.subfield_elt(F);
+    EXPECT_TRUE(x == x);
+  }
 }
 
 TEST(Random, SecureRandomEngine) {

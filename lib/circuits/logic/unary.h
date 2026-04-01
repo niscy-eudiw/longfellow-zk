@@ -34,7 +34,7 @@ class Unary {
   // A[i] <- (i == j)
   template <size_t W>
   void eq(size_t n, BitW A[/*n*/],
-          const typename Logic::template bitvec<W> j) const {
+          const typename Logic::template bitvec<W>& j) const {
     for (size_t i = 0; i < n; ++i) {
       A[i] = l_.veq(j, i);
     }
@@ -43,7 +43,7 @@ class Unary {
   // A[i] <- (i < j)
   template <size_t W>
   void lt(size_t n, BitW A[/*n*/],
-          const typename Logic::template bitvec<W> j) const {
+          const typename Logic::template bitvec<W>& j) const {
     for (size_t i = 0; i < n; ++i) {
       A[i] = l_.vlt(i, j);
     }

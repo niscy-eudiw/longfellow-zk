@@ -47,7 +47,7 @@ class Scan {
     std::vector<BitW> S1(n);
     for (size_t i = 0; i < n; ++i) {
       S1[i] = S[i];
-      B[i] = CTR.mux(&S[i], &A[i], ds[i]);
+      B[i] = CTR.mux(S[i], A[i], ds[i]);
     }
     scan_add(0, n, S1.data(), B);
   }
@@ -76,9 +76,9 @@ class Scan {
         // special case of B[i] = S[i] ? B[i] : B[i] + B[j]
         // coded as B[i] = B[i] + ite0(~S[i], B[j])
         BitW ns = L.lnot(S[i]);
-        CEltW ns_bj = CTR.ite0(&ns, B[j]);
-        B[i] = CTR.add(&B[i], ns_bj);
-        S[i] = L.lor(&S[i], S[j]);
+        CEltW ns_bj = CTR.ite0(ns, B[j]);
+        B[i] = CTR.add(B[i], ns_bj);
+        S[i] = L.lor(S[i], S[j]);
       }
     }
   }
@@ -94,7 +94,7 @@ class Scan {
 
       size_t j = im - 1;
       for (size_t i = im; i < i1; ++i) {
-        B[i] = CTR.add(&B[j], B[i]);
+        B[i] = CTR.add(B[j], B[i]);
       }
     }
   }

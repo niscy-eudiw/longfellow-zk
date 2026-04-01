@@ -18,9 +18,9 @@
 #include <algorithm>
 #include <cstddef>
 
-#include "circuits/ecdsa/pk_circuit.h"
 #include "circuits/logic/bit_plucker.h"
 #include "circuits/sha/flatsha256_circuit.h"
+#include "circuits/tests/ec/pk_circuit.h"
 #include "circuits/tests/ripemd/ripemd_circuit.h"
 #include "ec/p256k1.h"
 
@@ -129,7 +129,7 @@ class BitaddrCircuit {
     Elt two = lc_.f_.two();
     for (size_t i = 0; i < N; ++i) {
       EltW vi = lc_.eval(v[i]);
-      r = lc_.axpy(&r, p, vi);
+      r = lc_.axpy(r, p, vi);
       p = lc_.f_.mulf(p, two);
     }
     return r;
@@ -144,8 +144,8 @@ class BitaddrCircuit {
 
     // 2. Decompose pk_x and pk_y and verify decomposition
     // Ensure witnesses are bits (implicitly checked by vinput/BitW)
-    lc_.assert_eq(&w.pk_x, as_scalar_large(w.pk_x_bits));
-    lc_.assert_eq(&w.pk_y, as_scalar_large(w.pk_y_bits));
+    lc_.assert_eq(w.pk_x, as_scalar_large(w.pk_x_bits));
+    lc_.assert_eq(w.pk_y, as_scalar_large(w.pk_y_bits));
 
     // 3. Serialize pk for SHA256 input
     // Format: [prefix, x_bytes...]
@@ -235,7 +235,7 @@ class BitaddrCircuit {
 
     EltW hash_val = as_scalar_large(hash_bits);
 
-    lc_.assert_eq(&addr_elt, hash_val);
+    lc_.assert_eq(addr_elt, hash_val);
   }
 
  private:

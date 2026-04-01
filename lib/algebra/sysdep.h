@@ -338,6 +338,32 @@ static inline uint64_t sub_sysdep(uint64_t a, uint64_t y, uint64_t m) {
   return a + z;
 }
 
+// For x86_64 only, define 32-bit variants for testing 32-bit arithmetic
+// without cross-compilation.
+
+static inline void cmovne(size_t W, uint32_t a[/*W*/], uint32_t x, uint32_t y,
+                          const uint32_t b[/*W*/]) {
+  for (size_t i = 0; i < W; ++i) {
+    a[i] = (x != y) ? b[i] : a[i];
+  }
+}
+
+static inline void cmovnz(size_t W, uint32_t a[/*W*/], uint32_t nz,
+                          const uint32_t b[/*W*/]) {
+  constexpr uint32_t z = 0;
+  cmovne(W, a, nz, z, b);
+}
+
+static inline uint32_t addcmovc(uint32_t a, uint32_t b, uint32_t c) {
+  uint32_t t = a + b;
+  return (a > t) ? t : c;
+}
+
+static inline uint32_t sub_sysdep(uint32_t a, uint32_t y, uint32_t m) {
+  uint32_t t0 = a - y;
+  return (y > a) ? (t0 + m) : t0;
+}
+
 #elif defined(__aarch64__)
 
 static inline void cmovne(size_t W, uint64_t a[/*W*/], uint64_t x, uint64_t y,
@@ -452,6 +478,17 @@ static inline limb_t sub_sysdep(limb_t a, limb_t y, limb_t m) {
 }
 
 #endif
+
+// special cases for fp24
+static inline uint32_t addcmovc_32(uint32_t a, uint32_t b, uint32_t c) {
+  uint32_t t = a + b;
+  return (a > t) ? t : c;
+}
+
+static inline uint32_t sub_sysdep_32(uint32_t a, uint32_t y, uint32_t m) {
+  uint32_t t0 = a - y;
+  return (y > a) ? (t0 + m) : t0;
+}
 
 }  // namespace proofs
 

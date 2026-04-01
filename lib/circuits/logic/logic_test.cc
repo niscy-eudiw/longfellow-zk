@@ -54,50 +54,51 @@ TEST(Logic, Simple) {
     EXPECT_EQ(L.eval(L.lnot(ea)), L.eval(L.bit(!a)));
     for (size_t b = 0; b < 2; ++b) {
       auto eb = L.bit(b);
-      EXPECT_EQ(L.eval(L.land(&ea, eb)), L.eval(L.bit(a & b)));
-      EXPECT_EQ(L.eval(L.land(&ea, L.lnot(eb))), L.eval(L.bit(a & (!b))));
-      EXPECT_EQ(L.eval(L.land(&eb, L.lnot(ea))), L.eval(L.bit((!a) & b)));
-      auto nea = L.lnot(ea);
-      EXPECT_EQ(L.eval(L.land(&nea, L.lnot(eb))), L.eval(L.bit((!a) & (!b))));
+      EXPECT_EQ(L.eval(L.land(ea, eb)), L.eval(L.bit(a & b)));
+      EXPECT_EQ(L.eval(L.land(ea, L.lnot(eb))), L.eval(L.bit(a & (!b))));
+      EXPECT_EQ(L.eval(L.land(eb, L.lnot(ea))), L.eval(L.bit((!a) & b)));
+      EXPECT_EQ(L.eval(L.land(L.lnot(ea), L.lnot(eb))),
+                L.eval(L.bit((!a) & (!b))));
 
-      EXPECT_EQ(L.eval(L.lor(&ea, eb)), L.eval(L.bit(a | b)));
-      EXPECT_EQ(L.eval(L.lor(&ea, L.lnot(eb))), L.eval(L.bit(a | (!b))));
-      EXPECT_EQ(L.eval(L.lor(&eb, L.lnot(ea))), L.eval(L.bit((!a) | b)));
-      auto na = L.lnot(ea);
-      EXPECT_EQ(L.eval(L.lor(&na, L.lnot(eb))), L.eval(L.bit((!a) | (!b))));
+      EXPECT_EQ(L.eval(L.lor(ea, eb)), L.eval(L.bit(a | b)));
+      EXPECT_EQ(L.eval(L.lor(ea, L.lnot(eb))), L.eval(L.bit(a | (!b))));
+      EXPECT_EQ(L.eval(L.lor(eb, L.lnot(ea))), L.eval(L.bit((!a) | b)));
+      EXPECT_EQ(L.eval(L.lor(L.lnot(ea), L.lnot(eb))),
+                L.eval(L.bit((!a) | (!b))));
 
-      EXPECT_EQ(L.eval(L.lxor(&ea, eb)), L.eval(L.bit(a ^ b)));
-      EXPECT_EQ(L.eval(L.lxor(&ea, L.lnot(eb))), L.eval(L.bit(a ^ (!b))));
-      EXPECT_EQ(L.eval(L.lxor(&eb, L.lnot(ea))), L.eval(L.bit((!a) ^ b)));
-      EXPECT_EQ(L.eval(L.lxor(&na, L.lnot(eb))), L.eval(L.bit((!a) ^ (!b))));
+      EXPECT_EQ(L.eval(L.lxor(ea, eb)), L.eval(L.bit(a ^ b)));
+      EXPECT_EQ(L.eval(L.lxor(ea, L.lnot(eb))), L.eval(L.bit(a ^ (!b))));
+      EXPECT_EQ(L.eval(L.lxor(eb, L.lnot(ea))), L.eval(L.bit((!a) ^ b)));
+      EXPECT_EQ(L.eval(L.lxor(L.lnot(ea), L.lnot(eb))),
+                L.eval(L.bit((!a) ^ (!b))));
 
       if (!(a & b)) {
-        EXPECT_EQ(L.eval(L.lor_exclusive(&ea, eb)), L.eval(L.bit(a | b)));
+        EXPECT_EQ(L.eval(L.lor_exclusive(ea, eb)), L.eval(L.bit(a | b)));
       }
 
       auto axb = L.bit(a ^ b);
-      L.assert_eq(&axb, L.lxor(&ea, eb));
+      L.assert_eq(axb, L.lxor(ea, eb));
 
       for (size_t c = 0; c < 2; ++c) {
         auto ec = L.bit(c);
-        EXPECT_EQ(L.eval(L.lxor3(&ea, &eb, ec)), L.eval(L.bit(a ^ b ^ c)));
-        EXPECT_EQ(L.eval(L.land(&ea, L.lxor(&eb, ec))),
+        EXPECT_EQ(L.eval(L.lxor3(ea, eb, ec)), L.eval(L.bit(a ^ b ^ c)));
+        EXPECT_EQ(L.eval(L.land(ea, L.lxor(eb, ec))),
                   L.eval(L.bit(a & (b ^ c))));
-        EXPECT_EQ(L.eval(L.land(&ea, L.lor(&eb, ec))),
+        EXPECT_EQ(L.eval(L.land(ea, L.lor(eb, ec))),
                   L.eval(L.bit(a & (b | c))));
-        EXPECT_EQ(L.eval(L.lor(&ea, L.land(&eb, ec))),
+        EXPECT_EQ(L.eval(L.lor(ea, L.land(eb, ec))),
                   L.eval(L.bit(a | (b & c))));
-        EXPECT_EQ(L.eval(L.lor(&ea, L.lxor(&eb, ec))),
+        EXPECT_EQ(L.eval(L.lor(ea, L.lxor(eb, ec))),
                   L.eval(L.bit(a | (b ^ c))));
-        EXPECT_EQ(L.eval(L.lxor(&ea, L.land(&eb, ec))),
+        EXPECT_EQ(L.eval(L.lxor(ea, L.land(eb, ec))),
                   L.eval(L.bit(a ^ (b & c))));
-        EXPECT_EQ(L.eval(L.lxor(&ea, L.lor(&eb, ec))),
+        EXPECT_EQ(L.eval(L.lxor(ea, L.lor(eb, ec))),
                   L.eval(L.bit(a ^ (b | c))));
-        EXPECT_EQ(L.eval(L.mux(&ea, &eb, ec)), L.eval(L.bit(a ? b : c)));
+        EXPECT_EQ(L.eval(L.mux(ea, eb, ec)), L.eval(L.bit(a ? b : c)));
 
-        EXPECT_EQ(L.eval(L.lCh(&ea, &eb, ec)),
+        EXPECT_EQ(L.eval(L.lCh(ea, eb, ec)),
                   L.eval(L.bit((a & b) ^ ((!a) & c))));
-        EXPECT_EQ(L.eval(L.lMaj(&ea, &eb, ec)),
+        EXPECT_EQ(L.eval(L.lMaj(ea, eb, ec)),
                   L.eval(L.bit((a & b) ^ (a & c) ^ (b & c))));
       }
     }
@@ -127,11 +128,11 @@ TEST(Logic, Scan) {
         auto zo = L.bit(0);
         auto zx = L.bit(0);
         for (size_t i = 0; i < w; ++i) {
-          za = L.land(&za, x[i]);
+          za = L.land(za, x[i]);
           EXPECT_EQ(L.eval(za), L.eval(ya[i]));
-          zo = L.lor(&zo, x[i]);
+          zo = L.lor(zo, x[i]);
           EXPECT_EQ(L.eval(zo), L.eval(yo[i]));
-          zx = L.lxor(&zx, x[i]);
+          zx = L.lxor(zx, x[i]);
           EXPECT_EQ(L.eval(zx), L.eval(yx[i]));
         }
       }
@@ -148,11 +149,11 @@ TEST(Logic, Scan) {
         auto zo = L.bit(0);
         auto zx = L.bit(0);
         for (size_t i = w; i-- > 0;) {
-          za = L.land(&za, x[i]);
+          za = L.land(za, x[i]);
           EXPECT_EQ(L.eval(za), L.eval(ya[i]));
-          zo = L.lor(&zo, x[i]);
+          zo = L.lor(zo, x[i]);
           EXPECT_EQ(L.eval(zo), L.eval(yo[i]));
-          zx = L.lxor(&zx, x[i]);
+          zx = L.lxor(zx, x[i]);
           EXPECT_EQ(L.eval(zx), L.eval(yx[i]));
         }
       }
@@ -446,7 +447,7 @@ TEST(Logic, GF2_128Multiplier) {
     gf2_init(w, want.data(), test.c);
 
     L.gf2_128_mul(got, ea, eb);
-    L.vassert_eq(&got, want);
+    L.vassert_eq(got, want);
   }
 }
 
@@ -466,30 +467,30 @@ TEST(Logic, Bitvec) {
 
     for (size_t b = 0; b < (1 << w); ++b) {
       auto eb = L.vbit<w>(b);
-      auto vand = L.vand(&ea, eb);
-      auto vor = L.vor(&ea, eb);
-      auto vxor = L.vxor(&ea, eb);
+      auto vand = L.vand(ea, eb);
+      auto vor = L.vor(ea, eb);
+      auto vxor = L.vxor(ea, eb);
       auto vadd = L.vadd(ea, eb);
       expect_vequal(L, vand, L.vbit<w>(a & b));
       expect_vequal(L, vor, L.vbit<w>(a | b));
       expect_vequal(L, vxor, L.vbit<w>(a ^ b));
       expect_vequal(L, vadd, L.vbit<w>(a + b));
-      EXPECT_EQ(L.eval(L.veq(&ea, eb)), L.eval(L.bit(a == b)));
+      EXPECT_EQ(L.eval(L.veq(ea, eb)), L.eval(L.bit(a == b)));
       EXPECT_EQ(L.eval(L.veq(ea, b)), L.eval(L.bit(a == b)));
-      EXPECT_EQ(L.eval(L.vlt(&ea, eb)), L.eval(L.bit(a < b)));
+      EXPECT_EQ(L.eval(L.vlt(ea, eb)), L.eval(L.bit(a < b)));
       EXPECT_EQ(L.eval(L.vlt(ea, b)), L.eval(L.bit(a < b)));
-      EXPECT_EQ(L.eval(L.vleq(&ea, eb)), L.eval(L.bit(a <= b)));
+      EXPECT_EQ(L.eval(L.vleq(ea, eb)), L.eval(L.bit(a <= b)));
       EXPECT_EQ(L.eval(L.vleq(ea, b)), L.eval(L.bit(a <= b)));
 
       for (size_t c = 0; c < (1 << w); ++c) {
         auto ec = L.vbit<w>(c);
-        auto vxor3 = L.vxor3(&ea, &eb, ec);
-        auto vch = L.vCh(&ea, &eb, ec);
-        auto vmaj = L.vMaj(&ea, &eb, ec);
+        auto vxor3 = L.vxor3(ea, eb, ec);
+        auto vch = L.vCh(ea, eb, ec);
+        auto vmaj = L.vMaj(ea, eb, ec);
         expect_vequal(L, vxor3, L.vbit<w>(a ^ b ^ c));
         expect_vequal(L, vch, L.vbit<w>((a & b) ^ (~a & c)));
         expect_vequal(L, vmaj, L.vbit<w>((a & b) ^ (a & c) ^ (b & c)));
-        EXPECT_EQ(L.eval(L.veqmask(&ea, b, ec)),
+        EXPECT_EQ(L.eval(L.veqmask(ea, b, ec)),
                   L.eval(L.bit(((a ^ c) & b) == 0)));
         EXPECT_EQ(L.eval(L.veqmask(ea, b, c)),
                   L.eval(L.bit(((a ^ c) & b) == 0)));

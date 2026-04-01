@@ -32,13 +32,7 @@ struct Layer {
   size_t logw;  // number of binding rounds for the hand variables
   std::unique_ptr<const Quad<Field>> quad;
 
-  bool operator==(const Layer& y) const {
-    // This operator relies on the layer being properly constructed, so that
-    // the quad reference is never a nullptr.
-    return nw == y.nw && logw == y.logw && *quad == *y.quad;
-  }
-
-  size_t nterms() const { return quad->n_; }
+  size_t nterms() const { return quad->size(); }
 };
 
 template <class Field>
@@ -58,10 +52,6 @@ struct Circuit {
 
   uint8_t id[32];  // unique id for the circuit, created by the compiler
 
-  bool operator==(const Circuit& y) const {
-    return nv == y.nv && logv == y.logv && nc == y.nc && logc == y.logc &&
-           nl == y.nl && l == y.l;
-  }
   size_t nterms() const {
     size_t n = 0;
     for (const auto& layer : l) {

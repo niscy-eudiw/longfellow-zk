@@ -24,6 +24,9 @@
 #include "algebra/fp.h"
 #include "arrays/affine.h"
 #include "arrays/sparse.h"
+#include "sumcheck/equad.h"
+#include "sumcheck/hquad.h"
+#include "sumcheck/quad_builder.h"
 #include "gtest/gtest.h"
 
 namespace proofs {
@@ -32,8 +35,8 @@ typedef Fp<1> Field;
 static const Field F("18446744073709551557");
 typedef Field::Elt Elt;
 Bogorng<Field> rng(&F);
-typedef Quad<Field>::quad_corner_t quad_corner_t;
-typedef Quad<Field>::index_t index_t;
+typedef EQuad<Field>::quad_corner_t quad_corner_t;
+typedef EQuad<Field>::index_t index_t;
 
 class RandomSlice {
  public:
@@ -60,24 +63,26 @@ Elt lagrange(quad_corner_t p, size_t logn, const Elt* R) {
 void one_bind_g(index_t n, size_t logn) {
   RandomSlice R(logn);
   RandomSlice R2(logn);
-  auto Q = std::make_unique<Quad<Field>>(n);
+  auto EQUAD = std::make_unique<EQuad<Field>>(n);
   Elt s = F.zero();
   Elt s2 = F.zero();
   Elt alpha = rng.next();
   for (index_t i = 0; i < n; ++i) {
     quad_corner_t p = quad_corner_t(13 * i);
     Elt r = rng.next();
-    Q->c_[i] = Quad<Field>::corner{
+    EQUAD->ec_[i] = EQuad<Field>::ecorner{
         .g = p, .h = {quad_corner_t(0), quad_corner_t(0)}, .v = r};
     F.add(s, F.mulf(r, lagrange(p, logn, R.r_.data())));
     F.add(s2, F.mulf(r, lagrange(p, logn, R2.r_.data())));
   }
 
-  Q->bind_g(logn, R.r_.data(), R2.r_.data(), alpha, F.zero(), F);
-  EXPECT_EQ(Q->scalar(), F.addf(s, F.mulf(alpha, s2)));
+  auto QUAD = QuadBuilder<Field>::compress(EQUAD.get(), F);
+  auto HQUAD =
+      QUAD->bind_g(logn, R.r_.data(), R2.r_.data(), alpha, F.zero(), F);
+  EXPECT_EQ(HQUAD->scalar(), F.addf(s, F.mulf(alpha, s2)));
 }
 
-TEST(Quad, BindG) {
+TEST(EQuad, BindG) {
   one_bind_g(index_t(666), 10 + 4);
   one_bind_g(index_t(1), 9 + 4);
   for (size_t i = 200; i < 300; i++) {
@@ -90,7 +95,7 @@ TEST(Quad, BindG) {
 // compare interleaved binding of quad<> with
 // a pair of bind_all() of Sparse<>.
 void one_bind_h(index_t n, size_t logn) {
-  auto Q = Quad<Field>(n);
+  auto EQUAD = std::make_unique<EQuad<Field>>(n);
   auto S = Sparse<Field>(n);
   RandomSlice R0(logn);
   RandomSlice R1(logn);
@@ -99,7 +104,7 @@ void one_bind_h(index_t n, size_t logn) {
     quad_corner_t h0 = quad_corner_t((13 * i + 4) & mask);
     quad_corner_t h1 = quad_corner_t((23 * i + 3) & mask);
 
-    // quad<Field> canonicalizes h0, h1 because
+    // EQuad<Field> canonicalizes h0, h1 because
     // they are only used for a commutative F.mul,
     // but Sparse<Field> does not, so we canonicalize
     // h0, h1 in advance
@@ -108,28 +113,32 @@ void one_bind_h(index_t n, size_t logn) {
     }
 
     Elt r = rng.next();
-    Q.c_[i] =
-        Quad<Field>::corner{.g = quad_corner_t(0), .h = {h0, h1}, .v = r};
+    EQUAD->ec_[i] =
+        EQuad<Field>::ecorner{.g = quad_corner_t(0), .h = {h0, h1}, .v = r};
     S.c_[i] = Sparse<Field>::corner{
         .p0 = 0, .p1 = corner_t(h0), .p2 = corner_t(h1), .v = r};
   }
 
-  Q.canonicalize(F);
+  EQUAD->canonicalize(F);
   S.canonicalize(F);
   S.reshape();
 
   S.bind_all(logn, R0.r_.data(), F);
   S.reshape();
   S.bind_all(logn, R1.r_.data(), F);
+  auto QUAD = QuadBuilder<Field>::compress(EQUAD.get(), F);
+  auto HQUAD = QUAD->bind_g(/*logv=*/0, nullptr, nullptr, /*alpha=*/F.zero(),
+                            /*beta=*/F.zero(), F);
+
   for (size_t round = 0; round < logn; ++round) {
-    Q.bind_h(R0.r_[round], /*hand=*/0, F);
-    Q.bind_h(R1.r_[round], /*hand=*/1, F);
+    HQUAD->bind_h(R0.r_[round], /*hand=*/0, F);
+    HQUAD->bind_h(R1.r_[round], /*hand=*/1, F);
   }
 
-  EXPECT_EQ(Q.scalar(), S.scalar());
+  EXPECT_EQ(HQUAD->scalar(), S.scalar());
 }
 
-TEST(Quad, BindH) {
+TEST(EQuad, BindH) {
   one_bind_h(index_t(666), 10);
   one_bind_h(index_t(1), 9);
   for (size_t i = 200; i < 300; i++) {
@@ -142,22 +151,19 @@ TEST(Quad, BindH) {
   one_bind_h(index_t(512), 33);
 }
 
-TEST(Quad, equality) {
-  auto Q1 = Quad<Field>(1);
-  auto Q1b = Quad<Field>(1);
-  auto Q0 = Quad<Field>(0);
+TEST(ApproximateDeltaTableBuilder, Basic) {
+  ApproximateDeltaTableBuilder<Field> db(10);
+  // These three should be different and likely hash to different buckets,
+  // but if they collide it's also fine for the builder's correctness.
+  db.dedup(quad_corner_t(1), quad_corner_t(2), quad_corner_t(3), 4);
+  db.dedup(quad_corner_t(5), quad_corner_t(6), quad_corner_t(7), 8);
+  db.dedup(quad_corner_t(1), quad_corner_t(2), quad_corner_t(3), 4);
 
-  EXPECT_FALSE(Q1 == Q0);
-
-  quad_corner_t qone(1);
-  Q1.c_[0] = {qone, {qone, qone}, F.one()};
-  Q1b.c_[0] = {qone, {qone, qone}, F.one()};
-  Q1.n_ = Q1b.n_ = 1;
-  EXPECT_TRUE(Q1 == Q1b);
-
-  Q1b.c_[0] = {qone, {qone, qone}, F.two()};
-  EXPECT_FALSE(Q1 == Q1b);
+  auto table = db.delta_table();
+  // If no collision, size should be 2. If collision, size could be 3.
+  EXPECT_GE(table->size(), 2);
+  EXPECT_LE(table->size(), 3);
 }
+
 }  // namespace
 }  // namespace proofs
-

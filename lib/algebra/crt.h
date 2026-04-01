@@ -56,7 +56,7 @@ extern const uint64_t kOmega17[kBasisSize];
 // class can be instantiated once and used for many convolutions/etc.
 template <size_t VS, class Field>
 class CRT {
-  static constexpr size_t kWField = Field::N::kU64;
+  static constexpr size_t kWField = Field::kU64;
 
  public:
   static constexpr size_t kVS = VS;
@@ -88,36 +88,41 @@ class CRT {
       reduce_scale_[b] = bf_[b]->template reduce_scale<kWField>();
     }
 
-    // Standard CRT integer conversion requires computing a dot-product between
-    // the CRT representation and a vector of constants.
-    // The reconstruction pre-processing is to compute:
-    // 1. Compute P_i = prod_{j neq i} prime_j  and
-    //              P = prod_{j} prime_j
-    // 2. Compute inv_i such that inv_i * P_i = 1 mod prime_i
-    // The online reconstruction step is then:
-    // a. v = (sum_{i} r_i * recon_i) (mod  P)) mod f_p
-    // for (size_t i = 0; i < VS; ++i) {
-    //   recon_[i] = ring_.of_string(kRecon[i]);
-    // }
-    // However, we use the Garner method which requires more pre-processed
-    // elements, but produces a result that is guaranteed to be in [0,m] and
-    // does so using smaller operations.
+    if (VS == 1) {
+      // ignore the Garner reduction constants, and do not
+      // require the field to support dot products.
+    } else {
+      // Standard CRT integer conversion requires computing a dot-product
+      // between the CRT representation and a vector of constants. The
+      // reconstruction pre-processing is to compute:
+      // 1. Compute P_i = prod_{j neq i} prime_j  and
+      //              P = prod_{j} prime_j
+      // 2. Compute inv_i such that inv_i * P_i = 1 mod prime_i
+      // The online reconstruction step is then:
+      // a. v = (sum_{i} r_i * recon_i) (mod  P)) mod f_p
+      // for (size_t i = 0; i < VS; ++i) {
+      //   recon_[i] = ring_.of_string(kRecon[i]);
+      // }
+      // However, we use the Garner method which requires more pre-processed
+      // elements, but produces a result that is guaranteed to be in [0,m] and
+      // does so using smaller operations.
 
-    // garner_[i] are terms prod p_k in CRT formula, prepared for
-    // optimized FMA operations by 64-bit scalar vi[i] in to_field.
-    for (size_t i = 0; i < VS; ++i) {
-      auto g = f.one();
-      for (size_t j = 0; j < i; ++j) {
-        Nat<1> n(crt::kPrimes17[j]);
-        f.mul(g, f.reduce(n));
+      // garner_[i] are terms prod p_k in CRT formula, prepared for
+      // optimized FMA operations by 64-bit scalar vi[i] in to_field.
+      for (size_t i = 0; i < VS; ++i) {
+        auto g = f.one();
+        for (size_t j = 0; j < i; ++j) {
+          Nat<1> n(crt::kPrimes17[j]);
+          f.mul(g, f.reduce(n));
+        }
+        garner_[i] = f.prescale_for_dot(g);
       }
-      garner_[i] = f.prescale_for_dot(g);
-    }
 
-    // Initialize Garner constants Cij.
-    for (size_t i = 0; i < VS; ++i) {
-      for (size_t j = 0; j < i; ++j) {
-        cij_[i][j] = bf_[i]->invertf(bf_[i]->of_scalar(crt::kPrimes17[j]));
+      // Initialize Garner constants Cij.
+      for (size_t i = 0; i < VS; ++i) {
+        for (size_t j = 0; j < i; ++j) {
+          cij_[i][j] = bf_[i]->invertf(bf_[i]->of_scalar(crt::kPrimes17[j]));
+        }
       }
     }
   }
@@ -164,38 +169,41 @@ class CRT {
   // reconstruction step can be done in Fp, thereby requiring no arithmetic
   // in the Bigring.
   typename Field::Elt to_field(const Elt& x) const {
-    // Let cij be s.t. c_ij.pi = 1 mod pj
-    // v1 = x1
-    // v2 = (x2 - v1).c12 mod p2
-    // v3 = ((x3 - v1).c13 - v2).c23 mod p3
-    // v4 = (((x4 - v1).c14 - v2).c24 - v3).c34 mod p4
-    // ...
-    // u = vr.p_{r-1}p_{r-2}...p_1 + ... + v4.p3.p2.p1 + v3.p2.p1 + ... + v1
-    //   Because the goal is to compute u mod F_p, it suffices to maintain
-    //   each of the p_{r-j}...p1 products modulo F_p.
-
-    BaseNat vi[VS];
-    // This inner loop breaks our field abstraction. Instead of maintaining
-    // vi in Montgomery form, it is kept as a natural in [0,p-1].
-    // The F.sub method works in this form, and because cij_ is in
-    // Montgomery form, the last mul operation returns a result that is also
-    // "natural." This maneuver saves an of_scalar and a from_montgomery
-    // call in the inner-loop.
-    for (size_t j = 0; j < VS; ++j) {
-      vi[j] = bf_[j]->from_montgomery(x.r[j]);
-    }
-
-    // Change the order of operations to exploit data (in)dependencies. The
-    // subtractions and mults can all issue in parallel.
-    for (size_t j = 1; j < VS; ++j) {
-      for (size_t i = j; i < VS; ++i) {
-        const BaseField* Fi = bf_[i].get();
-        Fi->sub(vi[i], vi[j - 1]);
-        Fi->mul(vi[i], cij_[i][j - 1]);
+    if (VS == 1) {
+      return f_.reduce(bf_[0]->from_montgomery(x.r[0]));
+    } else {
+      // Let cij be s.t. c_ij.pi = 1 mod pj
+      // v1 = x1
+      // v2 = (x2 - v1).c12 mod p2
+      // v3 = ((x3 - v1).c13 - v2).c23 mod p3
+      // v4 = (((x4 - v1).c14 - v2).c24 - v3).c34 mod p4
+      // ...
+      // u = vr.p_{r-1}p_{r-2}...p_1 + ... + v4.p3.p2.p1 + v3.p2.p1 + ... + v1
+      //   Because the goal is to compute u mod F_p, it suffices to maintain
+      //   each of the p_{r-j}...p1 products modulo F_p.
+      BaseNat vi[VS];
+      // This inner loop breaks our field abstraction. Instead of maintaining
+      // vi in Montgomery form, it is kept as a natural in [0,p-1].
+      // The F.sub method works in this form, and because cij_ is in
+      // Montgomery form, the last mul operation returns a result that is also
+      // "natural." This maneuver saves an of_scalar and a from_montgomery
+      // call in the inner-loop.
+      for (size_t j = 0; j < VS; ++j) {
+        vi[j] = bf_[j]->from_montgomery(x.r[j]);
       }
-    }
 
-    return f_.dot(VS, vi, garner_);
+      // Change the order of operations to exploit data (in)dependencies. The
+      // subtractions and mults can all issue in parallel.
+      for (size_t j = 1; j < VS; ++j) {
+        for (size_t i = j; i < VS; ++i) {
+          const BaseField* Fi = bf_[i].get();
+          Fi->sub(vi[i], vi[j - 1]);
+          Fi->mul(vi[i], cij_[i][j - 1]);
+        }
+      }
+
+      return f_.dot(VS, vi, garner_);
+    }
   }
 
   // Returns a root of unity consisting of a root of unity of the same degree

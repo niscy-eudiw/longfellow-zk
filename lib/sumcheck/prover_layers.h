@@ -15,8 +15,7 @@
 #ifndef PRIVACY_PROOFS_ZK_LIB_SUMCHECK_PROVER_LAYERS_H_
 #define PRIVACY_PROOFS_ZK_LIB_SUMCHECK_PROVER_LAYERS_H_
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <memory>
 #include <vector>
 
@@ -24,6 +23,8 @@
 #include "arrays/dense.h"
 #include "arrays/eqs.h"
 #include "sumcheck/circuit.h"
+#include "sumcheck/equad.h"
+#include "sumcheck/hquad.h"
 #include "sumcheck/quad.h"
 #include "sumcheck/transcript_sumcheck.h"
 #include "util/panic.h"
@@ -137,20 +138,20 @@ class ProverLayers {
       Elt alpha, beta;
       ts.begin_layer(alpha, beta, ly);
       Eqs<Field> EQ(logc, nc, bnd.q, F);
-      auto QUAD = clr->quad->clone();
-      QUAD->bind_g(bnd.logv, bnd.g[0], bnd.g[1], alpha, beta, F);
+      auto EQUAD =
+          clr->quad->bind_g(bnd.logv, bnd.g[0], bnd.g[1], alpha, beta, F);
 
-      layer(pr, pad, ts, bnd, ly, logc, clr->logw, &EQ, QUAD.get(),
+      layer(pr, pad, ts, bnd, ly, logc, clr->logw, &EQ, EQUAD.get(),
             in.at(ly).get(), F);
 
       if (aux != nullptr) {
-        aux->bound_quad[ly] = QUAD->scalar();
+        aux->bound_quad[ly] = EQUAD->scalar();
       }
     }
   }
 
  private:
-  using index_t = typename Quad<Field>::index_t;
+  using index_t = typename EQuad<Field>::index_t;
   using CPoly = typename LayerProof<Field>::CPoly;
   using WPoly = typename LayerProof<Field>::WPoly;
   using FCPoly = typename LayerProof<Field>::FCPoly;
@@ -170,7 +171,7 @@ class ProverLayers {
   */
   void layer(Proof<Field>* pr, const Proof<Field>* pad,
              TranscriptSumcheck<Field>& ts, bindings& bnd, size_t layer,
-             size_t logc, size_t logw, Eqs<Field>* EQ, Quad<Field>* QUAD,
+             size_t logc, size_t logw, Eqs<Field>* EQ, HQuad<Field>* EQUAD,
              Dense<Field>* W, const Field& F) {
     check(EQ->n() == W->n0_, "EQ->n() == W->n0_");
 
@@ -186,22 +187,22 @@ class ProverLayers {
       CPoly sum{};
 
       // sum over r,l: QUAD[|r,l] EQ[|c] W[r,c] W[l,c]
-      for (index_t i = 0; i < QUAD->n_; i++) {
-        corner_t r(QUAD->c_[i].h[0]);
-        corner_t l(QUAD->c_[i].h[1]);
+      for (index_t i = 0; i < EQUAD->n_; i++) {
+        const corner_t r(EQUAD->hc_[i].h[0]);
+        const corner_t l(EQUAD->hc_[i].h[1]);
 
         // sum over c: EQ[|c] W[r,c] W[l,c]
         CPoly sumc{};
 
         // n0_ is the copy dimension, n1_ is the wire dimension.
         for (corner_t c = 0; c < W->n0_; c += 2) {
-          CPoly poly = cpoly_at_dense(EQ, c, 0, F)
-                           .mul(cpoly_at_dense(W, c, r, F), F)
-                           .mul(cpoly_at_dense(W, c, l, F), F);
+          const CPoly poly = cpoly_at_dense(EQ, c, 0, F)
+                                 .mul(cpoly_at_dense(W, c, r, F), F)
+                                 .mul(cpoly_at_dense(W, c, l, F), F);
           sumc.add(poly, F);
         }
 
-        sumc.mul_scalar(QUAD->c_[i].v, F);
+        sumc.mul_scalar(EQUAD->vc_[i].v, F);
         sum.add(sumc, F);
       }
 
@@ -218,8 +219,14 @@ class ProverLayers {
     W->reshape(W->n1_);
     check(W->n1_ == 1, "W->n1_ == 1");
 
-    auto Wclone = W->clone();                 // keep alive until function end
-    Dense<Field>* WH[2] = {W, Wclone.get()};  // reuse W
+    // To save memory, we avoid cloning W. Instead, we use a single temporary
+    // buffer Wtmp of size N/2 and start with both hand-pointers WH[0,1]
+    // pointing to W. In the first round of the loop, hand 0 is bound
+    // out-of-place from W into Wtmp, and we then update WH[0] to point to Wtmp.
+    // Hand 1 is then bound in-place in W. This strategy uses 1.5N space instead
+    // of 2N.
+    auto Wtmp = std::make_unique<Dense<Field>>((W->n0_ + 1) / 2, 1);
+    Dense<Field>* WH[2] = {W, W};
 
     for (size_t round = 0; round < logw; ++round) {
       for (size_t hand = 0; hand < 2; hand++) {
@@ -231,10 +238,10 @@ class ProverLayers {
         size_t ohand = 1 - hand;
 
         // QW[l] = SUM_{r} Q[l,r] W[r]
-        for (index_t i = 0; i < QUAD->n_; ++i) {
-          corner_t p0(QUAD->c_[i].h[hand]);
-          corner_t p1(QUAD->c_[i].h[ohand]);
-          F.add(QW.v_[p0], F.mulf(QUAD->c_[i].v, WH[ohand]->v_[p1]));
+        for (index_t i = 0; i < EQUAD->n_; ++i) {
+          const corner_t p0(EQUAD->hc_[i].h[hand]);
+          const corner_t p1(EQUAD->hc_[i].h[ohand]);
+          F.add(QW.v_[p0], F.mulf(EQUAD->vc_[i].v, WH[ohand]->v_[p1]));
         }
 
         // SUM_{l} QW[l] W[l].
@@ -250,12 +257,17 @@ class ProverLayers {
         bnd.g[hand][round] = rnd;
 
         // bind the r variable in W[hand] and QUAD
-        WH[hand]->bind(rnd, F);
-        QUAD->bind_h(rnd, hand, F);
+        if (round == 0 && hand == 0) {
+          WH[0] = Wtmp.get();
+          WH[0]->bind(rnd, *W, F);
+        } else {
+          WH[hand]->bind(rnd, F);
+        }
+        EQUAD->bind_h(rnd, hand, F);
       }
     }
 
-    QUAD->scalar();  // for the side effect of assertions
+    EQUAD->scalar();  // for the side effect of assertions
     Elt WC[2] = {WH[0]->scalar(), WH[1]->scalar()};
     end_layer(pr, pad, ts, layer, WC, F);
   }
@@ -271,20 +283,20 @@ class ProverLayers {
     corner_t n0 = V->n0_;
 
     V->clear(F);
-    for (index_t i = 0; i < quad->n_; i++) {
-      corner_t g(quad->c_[i].g);
-      corner_t r(quad->c_[i].h[0]);
-      corner_t l(quad->c_[i].h[1]);
+    for (const auto& ec : *quad) {
+      const corner_t g(ec.g);
+      const corner_t r(ec.h[0]);
+      const corner_t l(ec.h[1]);
       for (corner_t c = 0; c < n0; ++c) {
-        auto x = quad->c_[i].v;
-        if (x == F.zero()) {
+        if (ec.v == F.zero()) {
           // assert that the computed W[l]W[r] is zero.
-          auto y = W->v_[n0 * l + c];
+          Elt y = W->v_[n0 * l + c];
           F.mul(y, W->v_[n0 * r + c]);
           if (y != F.zero()) {
             return false;
           }
         } else {
+          Elt x = ec.v;
           F.mul(x, W->v_[n0 * l + c]);
           F.mul(x, W->v_[n0 * r + c]);
           F.add(V->v_[n0 * g + c], x);

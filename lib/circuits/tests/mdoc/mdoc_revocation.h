@@ -19,8 +19,8 @@
 
 #include "circuits/ecdsa/verify_circuit.h"
 #include "circuits/logic/bit_plucker.h"
-#include "circuits/tests/mdoc/mdoc_revocation_constants.h"
 #include "circuits/sha/flatsha256_circuit.h"
+#include "circuits/tests/mdoc/mdoc_revocation_constants.h"
 
 namespace proofs {
 
@@ -39,9 +39,9 @@ class MdocRevocationList {
   void assert_not_on_list(EltW list[], size_t list_size,
                           /* the witness */ EltW id, EltW prodinv) const {
     EltW prod =
-        lc_.mul(0, list_size, [&](size_t i) { return lc_.sub(&list[i], id); });
-    EltW want_one = lc_.mul(&prod, prodinv);
-    lc_.assert_eq(&want_one, lc_.konst(lc_.one()));
+        lc_.mul(0, list_size, [&](size_t i) { return lc_.sub(list[i], id); });
+    EltW want_one = lc_.mul(prod, prodinv);
+    lc_.assert_eq(want_one, lc_.konst(lc_.one()));
   }
 
   const LogicCircuit& lc_;
@@ -120,10 +120,10 @@ class MdocRevocationSpan {
     auto twok = lc_.one();
     auto est = lc_.konst(0);
     for (size_t i = 0; i < 256; ++i) {
-      est = lc_.axpy(&est, twok, lc_.eval(vw.e_bits_[i]));
+      est = lc_.axpy(est, twok, lc_.eval(vw.e_bits_[i]));
       lc_.f_.add(twok, twok);
     }
-    lc_.assert_eq(&est, vw.e_);
+    lc_.assert_eq(est, vw.e_);
 
     // // Check that l < id < r
     v256 ll, rr;
@@ -131,8 +131,8 @@ class MdocRevocationSpan {
       ll[i] = vw.preimage_[8 + i / 8][i % 8];
       rr[i] = vw.preimage_[40 + i / 8][i % 8];
     }
-    lc_.assert1(lc_.vlt(&ll, vw.id_bits_));
-    lc_.assert1(lc_.vlt(&vw.id_bits_, rr));
+    lc_.assert1(lc_.vlt(ll, vw.id_bits_));
+    lc_.assert1(lc_.vlt(vw.id_bits_, rr));
   }
 
   const LogicCircuit& lc_;

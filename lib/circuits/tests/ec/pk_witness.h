@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef PRIVACY_PROOFS_ZK_LIB_CIRCUITS_ECDSA_PK_WITNESS_H_
-#define PRIVACY_PROOFS_ZK_LIB_CIRCUITS_ECDSA_PK_WITNESS_H_
+#ifndef PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_EC_PK_WITNESS_H_
+#define PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_EC_PK_WITNESS_H_
 
 #include <cstddef>
 
@@ -99,4 +99,4 @@ class PkWitness {
 
 }  // namespace proofs
 
-#endif  // PRIVACY_PROOFS_ZK_LIB_CIRCUITS_ECDSA_PK_WITNESS_H_
+#endif  // PRIVACY_PROOFS_ZK_LIB_CIRCUITS_TESTS_EC_PK_WITNESS_H_

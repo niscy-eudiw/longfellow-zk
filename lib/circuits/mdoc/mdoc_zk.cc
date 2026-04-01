@@ -115,8 +115,8 @@ static constexpr bool enforce_circuit_id_in_verifier = false;
 
 // Specialization for filling the mac when using f_128.
 template <>
-void fill_gf2k<f_128, f_128>(const typename f_128::Elt &m,
-                             DenseFiller<f_128> &df, const f_128 &f) {
+void fill_gf2k<f_128, f_128>(const typename f_128::Elt& m,
+                             DenseFiller<f_128>& df, const f_128& f) {
   df.push_back(m);
 }
 
@@ -163,8 +163,8 @@ MdocProverErrorCode fill_attributes(DenseFiller<f_128>& hash_filler,
 }
 
 // Fills the signature witness with the public inputs pkX, pkY, and e.
-void fill_signature_inputs(DenseFiller<Fp256Base> &sig_filler, const Elt &pkX,
-                           const Elt &pkY, const Elt &e) {
+void fill_signature_inputs(DenseFiller<Fp256Base>& sig_filler, const Elt& pkX,
+                           const Elt& pkY, const Elt& e) {
   sig_filler.push_back(p256_base.one());
   sig_filler.push_back(pkX);
   sig_filler.push_back(pkY);
@@ -173,13 +173,13 @@ void fill_signature_inputs(DenseFiller<Fp256Base> &sig_filler, const Elt &pkX,
 
 // Fills the public inputs for the hash and signature circuits.
 // Empty values for the MAC inputs and AV are used.
-bool fill_public_inputs(DenseFiller<Fp256Base> &sig_filler,
-                        DenseFiller<f_128> &hash_filler, const Elt &pkX,
-                        const Elt &pkY, const uint8_t *tr, size_t tr_len,
-                        const RequestedAttribute *attrs, size_t attrs_len,
-                        const uint8_t *now, const uint8_t *docType,
+bool fill_public_inputs(DenseFiller<Fp256Base>& sig_filler,
+                        DenseFiller<f_128>& hash_filler, const Elt& pkX,
+                        const Elt& pkY, const uint8_t* tr, size_t tr_len,
+                        const RequestedAttribute* attrs, size_t attrs_len,
+                        const uint8_t* now, const uint8_t* docType,
                         size_t dt_len, const gf2k macs[], gf2k av,
-                        const f_128 &Fs, size_t version) {
+                        const f_128& Fs, size_t version) {
   if (fill_attributes(hash_filler, attrs, attrs_len, now, Fs, version) !=
       MDOC_PROVER_SUCCESS) {
     return false;
@@ -264,7 +264,7 @@ MdocProverErrorCode fill_witness(
 
   // private witnesses
   hw->fill_witness(fill_s, version);
-  for (auto &mac : state.macs) {
+  for (auto& mac : state.macs) {
     mac.fill_witness(fill_s);
   }
 
@@ -273,7 +273,7 @@ MdocProverErrorCode fill_witness(
   return MDOC_PROVER_SUCCESS;
 }
 
-gf2k generate_mac_key(Transcript &t) {
+gf2k generate_mac_key(Transcript& t) {
   f_128 gf;
   uint8_t buf[f_128::kBytes];
   t.bytes(buf, f_128::kBytes);
@@ -282,9 +282,9 @@ gf2k generate_mac_key(Transcript &t) {
 
 // Updates the dense input array with a mac.The location
 // of the start of the macs+av inputs must be passed in as (si, hi).
-void update_mac_in_dense(Dense<Fp256Base> &W_sig, Dense<f_128> &W_hash,
-                         size_t &si, size_t &hi, const gf2k mac,
-                         const f_128 &Fs) {
+void update_mac_in_dense(Dense<Fp256Base>& W_sig, Dense<f_128>& W_hash,
+                         size_t& si, size_t& hi, const gf2k mac,
+                         const f_128& Fs) {
   for (size_t j = 0; j < f_128::kBits; ++j) {
     W_sig.v_[si++] = mac[j] ? p256_base.one() : p256_base.zero();
   }
@@ -293,15 +293,15 @@ void update_mac_in_dense(Dense<Fp256Base> &W_sig, Dense<f_128> &W_hash,
 
 // Updates all macs in both dense arrays. The (si,hi) should be the index
 // of the first mac in the respective dense arrays.
-void update_macs(Dense<Fp256Base> &W_sig, Dense<f_128> &W_hash, size_t si,
-                 size_t hi, const gf2k macs[], gf2k av, const f_128 &Fs) {
+void update_macs(Dense<Fp256Base>& W_sig, Dense<f_128>& W_hash, size_t si,
+                 size_t hi, const gf2k macs[], gf2k av, const f_128& Fs) {
   for (size_t mi = 0; mi < 6; ++mi) {
     update_mac_in_dense(W_sig, W_hash, si, hi, macs[mi], Fs);
   }
   update_mac_in_dense(W_sig, W_hash, si, hi, av, Fs);
 }
 
-bool parsePk(const char *pkx, const char *pky, Elt &pkX, Elt &pkY) {
+bool parsePk(const char* pkx, const char* pky, Elt& pkX, Elt& pkY) {
   auto maybe_x = p256_base.of_untrusted_string(pkx);
   auto maybe_y = p256_base.of_untrusted_string(pky);
   if (!maybe_x.has_value() || !maybe_y.has_value()) {
@@ -391,13 +391,13 @@ using MdocSWw = MdocSignatureWitness<P256, Fp256Scalar>;
 // the signature and the hash components of the mdoc.
 // It is the caller's job to free the memory pointed to by prf.
 MdocProverErrorCode run_mdoc_prover(
-    const uint8_t *bcp, size_t bcsz, /* circuit data */
-    const uint8_t *mdoc, size_t mdoc_len, const char *pkx,
-    const char *pky,                          /* string rep of public key */
-    const uint8_t *transcript, size_t tr_len, /* session transcript */
-    const RequestedAttribute *attrs, size_t attrs_len,
-    const char *now, /* time formatted as "2023-11-02T09:00:00Z" */
-    uint8_t **prf, size_t *proof_len, const ZkSpecStruct *zk_spec) {
+    const uint8_t* bcp, size_t bcsz, /* circuit data */
+    const uint8_t* mdoc, size_t mdoc_len, const char* pkx,
+    const char* pky,                          /* string rep of public key */
+    const uint8_t* transcript, size_t tr_len, /* session transcript */
+    const RequestedAttribute* attrs, size_t attrs_len,
+    const char* now, /* time formatted as "2023-11-02T09:00:00Z" */
+    uint8_t** prf, size_t* proof_len, const ZkSpecStruct* zk_spec) {
   if (bcp == nullptr || mdoc == nullptr || pkx == nullptr || pky == nullptr ||
       transcript == nullptr || attrs == nullptr || now == nullptr ||
       prf == nullptr || proof_len == nullptr || zk_spec == nullptr) {
@@ -419,32 +419,36 @@ MdocProverErrorCode run_mdoc_prover(
   const f2_p256 p256_2(p256_base);
   const f_128 Fs;
 
-  size_t len = kCircuitSizeMax;
-  std::vector<uint8_t> bytes(len);
-  size_t full_size = decompress(bytes, bcp, bcsz);
+  std::unique_ptr<Circuit<Fp256Base>> c_sig = nullptr;
+  std::unique_ptr<Circuit<f_128>> c_hash = nullptr;
+  /* scope for the bytes array */ {
+    size_t len = kCircuitSizeMax;
+    std::vector<uint8_t> bytes(len);
+    size_t full_size = decompress(bytes, bcp, bcsz);
 
-  if (full_size == 0) {
-    return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
+    if (full_size == 0) {
+      return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
+    }
+
+    log(INFO, "bytes len: %zu", full_size);
+    ReadBuffer rb_circuit(bytes.data(), full_size);
+
+    CircuitRep<Fp256Base> cr_s(p256_base, P256_ID);
+    c_sig = cr_s.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
+    if (c_sig == nullptr) {
+      log(ERROR, "signature circuit could not be parsed");
+      return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
+    }
+    CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
+    c_hash = cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
+
+    if (c_hash == nullptr) {
+      log(ERROR, "hash circuit could not be parsed");
+      return MDOC_PROVER_HASH_PARSING_FAILURE;
+    }
+    log(INFO, "circuit created. h[in:%zu q:%zu], s[in:%zu q:%zu]",
+        c_hash->ninputs, c_hash->nl, c_sig->ninputs, c_sig->nl);
   }
-
-  log(INFO, "bytes len: %zu", full_size);
-  ReadBuffer rb_circuit(bytes.data(), full_size);
-
-  CircuitRep<Fp256Base> cr_s(p256_base, P256_ID);
-  auto c_sig = cr_s.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
-  if (c_sig == nullptr) {
-    log(ERROR, "signature circuit could not be parsed");
-    return MDOC_PROVER_CIRCUIT_PARSING_FAILURE;
-  }
-  CircuitRep<f_128> cr_h(Fs, GF2_128_ID);
-  auto c_hash = cr_h.from_bytes(rb_circuit, enforce_circuit_id_in_prover);
-
-  if (c_hash == nullptr) {
-    log(ERROR, "hash circuit could not be parsed");
-    return MDOC_PROVER_HASH_PARSING_FAILURE;
-  }
-  log(INFO, "circuit created. h[in:%zu q:%zu], s[in:%zu q:%zu]",
-      c_hash->ninputs, c_hash->nl, c_sig->ninputs, c_sig->nl);
 
   //  ============ Produce zk witness ==============
   auto W_sig = Dense<Fp256Base>(1, c_sig->ninputs);
@@ -521,8 +525,8 @@ MdocProverErrorCode run_mdoc_prover(
   log(INFO, "proof_len: %zu ", *proof_len);
 
   // Allocate memory and copy proof bytes.
-  *prf = (uint8_t *)malloc(*proof_len);
-  if (!prf) {
+  *prf = (uint8_t*)malloc(*proof_len);
+  if (!*prf) {
     log(ERROR, "malloc failed");
     return MDOC_PROVER_MEMORY_ALLOCATION_FAILURE;
   }
@@ -531,13 +535,13 @@ MdocProverErrorCode run_mdoc_prover(
 }
 
 MdocVerifierErrorCode run_mdoc_verifier(
-    const uint8_t *bcp, size_t bcsz,          /* circuit data */
-    const char *pkx, const char *pky,         /* string rep of public key */
-    const uint8_t *transcript, size_t tr_len, /* session Transcript */
-    const RequestedAttribute *attrs, size_t attrs_len,
-    const char *now, /* time formatted as "2023-11-02T09:00:00Z" */
-    const uint8_t *zkproof, size_t proof_len, const char *docType,
-    const ZkSpecStruct *zk_spec) {
+    const uint8_t* bcp, size_t bcsz,          /* circuit data */
+    const char* pkx, const char* pky,         /* string rep of public key */
+    const uint8_t* transcript, size_t tr_len, /* session Transcript */
+    const RequestedAttribute* attrs, size_t attrs_len,
+    const char* now, /* time formatted as "2023-11-02T09:00:00Z" */
+    const uint8_t* zkproof, size_t proof_len, const char* docType,
+    const ZkSpecStruct* zk_spec) {
   if (bcp == nullptr || pkx == nullptr || pky == nullptr ||
       transcript == nullptr || now == nullptr || attrs == nullptr ||
       zkproof == nullptr || docType == nullptr || zk_spec == nullptr) {
@@ -668,8 +672,8 @@ MdocVerifierErrorCode run_mdoc_verifier(
 
   size_t dlen = strlen(docType);
   if (!fill_public_inputs(sig_filler, hash_filler, pkX, pkY, transcript, tr_len,
-                          attrs, attrs_len, (const uint8_t *)now,
-                          (const uint8_t *)docType, dlen, macs, av, Fs,
+                          attrs, attrs_len, (const uint8_t*)now,
+                          (const uint8_t*)docType, dlen, macs, av, Fs,
                           zk_spec->version)) {
     return MDOC_VERIFIER_GENERAL_FAILURE;
   }

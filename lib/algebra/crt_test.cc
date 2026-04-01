@@ -64,43 +64,13 @@ void testFp(const CRT& crt, const Field& F) {
   }
 }
 
-TEST(CrtTest, Fp256Test) {
-  Fp256<> F;
-  CRT256<Fp256<>> crt(F);
-  testFp(crt, F);
-}
-
-TEST(CrtTest, Fp384Test) {
-  Fp384<> F;
-  CRT384<Fp384<>> crt(F);
-  testFp(crt, F);
-}
-
-TEST(CrtTest, Fp521Test) {
-  Fp521<> F;
-  CRT521<Fp521<>> crt(F);
-  testFp(crt, F);
-}
-
-TEST(CrtTest, RootOfUnity) {
-  CRT521<Fp1> crt(fp1);
-  auto omega = crt.omega();
-
-  for (size_t i = 1; i < crt.omega_order(); i *= 2) {
-    // Ensure all intermediate powers of omega are not unity.
-    EXPECT_NE(omega, crt.one());
-    crt.mul(omega, omega);
-  }
-  EXPECT_EQ(omega, crt.one());
-}
-
-TEST(CrtTest, FFTInverse) {
-  using Fp = Fp<4>;
-  using Elt = Fp::Elt;
-  const Fp F(
-      "218882428718392752222464057452572750885483644004160343436982041865758084"
-      "95617");
-  Bogorng<Fp> rng(&F);
+// Verifies that performing a forward FFT followed by a backward FFT over the
+// Chinese Remainder Theorem (CRT) representation recovers the original input
+// vector, up to the expected scale factor of `n`.
+template <typename Field>
+void TestFFTInverse(const Field& F) {
+  using Elt = typename Field::Elt;
+  Bogorng<Field> rng(&F);
 
   size_t n = 1024;
   std::vector<Elt> A(n);
@@ -109,7 +79,7 @@ TEST(CrtTest, FFTInverse) {
   }
 
   // Same over CRT.
-  using CRT = CRT256<Fp>;
+  using CRT = CRT256<Field>;
   using CRTElt = typename CRT::Elt;
   CRT crt(F);
   auto omega_crt = crt.omega();
@@ -129,6 +99,59 @@ TEST(CrtTest, FFTInverse) {
   }
 }
 
+TEST(CrtTest, Fp1Test) {
+  const Fp1 fp("8380417");
+  CRT<1, Fp1> crt(fp);
+  testFp(crt, fp);
+  TestFFTInverse(fp);
+}
+
+TEST(CrtTest, Fp256Test) {
+  Fp256<> F;
+  CRT256<Fp256<>> crt(F);
+  testFp(crt, F);
+  TestFFTInverse(F);
+}
+
+TEST(CrtTest, Fp384Test) {
+  Fp384<> F;
+  CRT384<Fp384<>> crt(F);
+  testFp(crt, F);
+  TestFFTInverse(F);
+}
+
+TEST(CrtTest, Fp521Test) {
+  Fp521<> F;
+  CRT521<Fp521<>> crt(F);
+  testFp(crt, F);
+  TestFFTInverse(F);
+}
+
+TEST(CrtTest, RootOfUnity) {
+  CRT521<Fp1> crt(fp1);
+  auto omega = crt.omega();
+
+  for (size_t i = 1; i < crt.omega_order(); i *= 2) {
+    // Ensure all intermediate powers of omega are not unity.
+    EXPECT_NE(omega, crt.one());
+    crt.mul(omega, omega);
+  }
+  EXPECT_EQ(omega, crt.one());
+}
+
+TEST(CrtTest, FFTInverse) {
+  using Fp = Fp<4>;
+  const Fp F(
+      "218882428718392752222464057452572750885483644004160343436982041865758084"
+      "95617");
+  TestFFTInverse(F);
+}
+
+// Verifies that a convolution performed using FFT over the base field `Fp`
+// agrees with a convolution performed using the CRT approach. This test
+// requires the target field `Fp` to have a known primitive root of unity
+// (`omegaf`) of order `omegaf_order` large enough to support the FFT over
+// vectors of size M + N - 1.
 TEST(CrtTest, ConvolutionTest) {
   using Fp = Fp<4>;
 

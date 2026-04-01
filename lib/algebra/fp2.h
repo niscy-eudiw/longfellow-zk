@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 
 #include "util/panic.h"
@@ -179,6 +180,19 @@ class Fp2 {
       }
     }
     return std::nullopt;
+  }
+
+  Elt sample(
+      const std::function<void(size_t n, uint8_t buf[])>& fill_bytes) const {
+    auto re = f_.sample(fill_bytes);
+    auto im = f_.sample(fill_bytes);
+    return Elt{re, im};
+  }
+
+  Elt sample_subfield(
+      const std::function<void(size_t n, uint8_t buf[])>& fill_bytes) const {
+    auto re = f_.sample(fill_bytes);
+    return of_scalar_field(re);
   }
 
   void to_bytes_field(uint8_t ab[/* kBytes */], const Elt& x) const {

@@ -32,10 +32,7 @@ void Sha3Witness::compute_witness_block(uint64_t A[5][5], BlockWitness& bw) {
     Sha3Reference::chi(A1, A);
     Sha3Reference::iota(A, round);
 
-    if ((round % 4) == 3) {
-      int idx = round / 4;
-      std::memcpy(bw.a_intermediate[idx], A, 25 * sizeof(uint64_t));
-    }
+    std::memcpy(bw.a_intermediate[round], A, 25 * sizeof(uint64_t));
   }
 }
 

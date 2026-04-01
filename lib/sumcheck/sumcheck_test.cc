@@ -25,8 +25,10 @@
 #include "arrays/dense.h"
 #include "random/transcript.h"
 #include "sumcheck/circuit.h"
+#include "sumcheck/equad.h"
 #include "sumcheck/prover.h"
 #include "sumcheck/quad.h"
+#include "sumcheck/quad_builder.h"
 #include "sumcheck/verifier.h"
 #include "gtest/gtest.h"
 
@@ -40,7 +42,7 @@ using Elt = typename Field::Elt;
 
 Bogorng<Field> rng(&F);
 using index_t = Quad<Field>::index_t;
-using corner = Quad<Field>::corner;
+using ecorner = EQuad<Field>::ecorner;
 using quad_corner_t = Quad<Field>::quad_corner_t;
 
 /* From https://eprint.iacr.org/2015/1060.pdf Algorithm 7: Complete,
@@ -115,7 +117,7 @@ struct testquad {
 
 std::unique_ptr<Quad<Field>> sparse_of_testquad(size_t n,
                                                 const struct testquad* q) {
-  auto S = std::make_unique<Quad<Field>>(n);
+  auto S = std::make_unique<EQuad<Field>>(n);
 
   for (size_t i = 0; i < n; i++) {
     auto l = q[i].l, r = q[i].r;
@@ -125,13 +127,13 @@ std::unique_ptr<Quad<Field>> sparse_of_testquad(size_t n,
       std::swap(l, r);
     }
 
-    S->c_[i] = corner{.g = quad_corner_t(q[i].g),
-                      .h = {quad_corner_t(r), quad_corner_t(l)},
-                      .v = q[i].coef};
+    S->ec_[i] = ecorner{.g = quad_corner_t(q[i].g),
+                        .h = {quad_corner_t(r), quad_corner_t(l)},
+                        .v = q[i].coef};
   }
 
   S->canonicalize(F);
-  return S;
+  return QuadBuilder<Field>::compress(S.get(), F);
 }
 
 #define NELEM(x) (sizeof(x) / sizeof(x[0]))
@@ -278,16 +280,16 @@ size_t around(size_t n) { return n + (std::rand() % n); }
 quad_corner_t rand_corner(size_t n) { return quad_corner_t(std::rand()) % n; }
 
 std::unique_ptr<Quad<Field>> random_quad(index_t n, corner_t nv, corner_t nw) {
-  auto S = std::make_unique<Quad<Field>>(n);
+  auto S = std::make_unique<EQuad<Field>>(n);
   for (index_t i = 0; i < n; i++) {
-    S->c_[i] = corner{
+    S->ec_[i] = ecorner{
         .g = rand_corner(nv),
         .h = {rand_corner(nw), rand_corner(nw)},
         .v = rng.next(),
     };
   }
   S->canonicalize(F);
-  return S;
+  return QuadBuilder<Field>::compress(S.get(), F);
 }
 
 std::unique_ptr<Circuit<Field>> random_circuit() {

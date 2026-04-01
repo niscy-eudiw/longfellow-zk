@@ -134,8 +134,8 @@ class Small {
     // // DPK_{x,y}
     EltW dpkx = repack(vw.in_, 100);
     EltW dpky = repack(vw.in_, 132);
-    lc_.assert_eq(&dpkx, vw.dpkx_);
-    lc_.assert_eq(&dpky, vw.dpky_);
+    lc_.assert_eq(dpkx, vw.dpkx_);
+    lc_.assert_eq(dpky, vw.dpky_);
 
     // Attributes parsing
     const v8 zz = lc_.template vbit<8>(0xff);  // cannot appear in strings
@@ -153,8 +153,8 @@ class Small {
                         const v8 want[/*max*/]) const {
     for (size_t j = 0; j < max; ++j) {
       auto ll = lc_.vlt(j, vlen);
-      auto cmp = lc_.veq(&got[j], want[j]);
-      lc_.assert_implies(&ll, cmp);
+      auto cmp = lc_.veq(got[j], want[j]);
+      lc_.assert_implies(ll, cmp);
     }
   }
 
@@ -171,17 +171,17 @@ class Small {
       for (size_t i = 0; i < 8; ++i) {
         for (size_t k = 0; k < sha_.bp_.kNv32Elts; ++k) {
           if (b == 0) {
-            x[i][k] = lc_.mul(&ebt, vw.sig_sha_[b].h1[i][k]);
+            x[i][k] = lc_.mul(ebt, vw.sig_sha_[b].h1[i][k]);
           } else {
-            auto maybe_sha = lc_.mul(&ebt, vw.sig_sha_[b].h1[i][k]);
-            x[i][k] = lc_.add(&x[i][k], maybe_sha);
+            auto maybe_sha = lc_.mul(ebt, vw.sig_sha_[b].h1[i][k]);
+            x[i][k] = lc_.add(x[i][k], maybe_sha);
           }
         }
       }
     }
 
     EltW h = repack32(x);
-    lc_.assert_eq(&h, e);
+    lc_.assert_eq(h, e);
   }
 
   EltW repack(const v8 in[], size_t ind) const {
@@ -189,9 +189,9 @@ class Small {
     EltW base = lc_.konst(0x2);
     for (size_t i = 0; i < 32; ++i) {
       for (size_t j = 0; j < 8; ++j) {
-        auto t = lc_.mul(&h, base);
+        auto t = lc_.mul(h, base);
         auto tin = lc_.eval(in[ind + i][7 - j]);
-        h = lc_.add(&tin, t);
+        h = lc_.add(tin, t);
       }
     }
     return h;
@@ -203,7 +203,7 @@ class Small {
     for (size_t j = 8; j-- > 0;) {
       auto hj = sha_.bp_.unpack_v32(H[j]);
       for (size_t k = 0; k < 32; ++k) {
-        h = lc_.axpy(&h, twok, lc_.eval(hj[k]));
+        h = lc_.axpy(h, twok, lc_.eval(hj[k]));
         lc_.f_.add(twok, twok);
       }
     }

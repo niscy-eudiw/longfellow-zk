@@ -20,9 +20,9 @@
 #include <vector>
 
 #include "arrays/dense.h"
-#include "circuits/ecdsa/pk_witness.h"
 #include "circuits/logic/bit_plucker_encoder.h"
 #include "circuits/sha/flatsha256_witness.h"
+#include "circuits/tests/ec/pk_witness.h"
 #include "circuits/tests/ripemd/ripemd_witness.h"
 #include "ec/p256k1.h"
 

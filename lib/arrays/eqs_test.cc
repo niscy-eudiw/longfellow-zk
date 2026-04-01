@@ -124,5 +124,28 @@ TEST(Eqs, RFC) {
     EXPECT_EQ(RFC[i], EQ2.at(i));
   }
 }
+
+TEST(Eqs, RawEq2) {
+  Bogorng<Field> rng(&F);
+  for (size_t logn = 0; logn < 6; logn++) {
+    for (corner_t n = 1; n <= (corner_t(1) << logn); n++) {
+      RandomSlice G0(logn);
+      RandomSlice G1(logn);
+      Elt alpha = rng.next();
+
+      auto eq =
+          Eqs<Field>::raw_eq2(logn, n, G0.r_.data(), G1.r_.data(), alpha, F);
+      Eqs<Field> EQ0(logn, n, G0.r_.data(), F);
+      Eqs<Field> EQ1(logn, n, G1.r_.data(), F);
+
+      ASSERT_EQ(eq.size(), n);
+      for (corner_t i = 0; i < n; i++) {
+        Elt expected = F.addf(EQ0.at(i), F.mulf(alpha, EQ1.at(i)));
+        EXPECT_EQ(eq[i], expected)
+            << "logn=" << logn << ", n=" << n << ", i=" << i;
+      }
+    }
+  }
+}
 }  // namespace
 }  // namespace proofs

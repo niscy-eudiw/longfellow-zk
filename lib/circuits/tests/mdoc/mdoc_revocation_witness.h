@@ -23,8 +23,8 @@
 #include "arrays/dense.h"
 #include "circuits/ecdsa/verify_witness.h"
 #include "circuits/logic/bit_plucker_encoder.h"
-#include "circuits/tests/mdoc/mdoc_revocation_constants.h"
 #include "circuits/sha/flatsha256_witness.h"
+#include "circuits/tests/mdoc/mdoc_revocation_constants.h"
 
 namespace proofs {
 

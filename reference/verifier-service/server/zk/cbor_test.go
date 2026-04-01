@@ -49,63 +49,6 @@ func TestLoadIssuerRootCA(t *testing.T) {
 	}
 }
 
-func TestProcessDeviceResponseOriginal(t *testing.T) {
-	ca, _, err := generateTestCA()
-	if err != nil {
-		t.Fatalf("failed to generate test CA: %v", err)
-	}
-	pemBlock := &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: ca.Raw,
-	}
-	pemBytes := pem.EncodeToMemory(pemBlock)
-	if err := LoadIssuerRootCA(pemBytes); err != nil {
-		t.Fatalf("failed to load issuer root CA: %v", err)
-	}
-
-	doc, err := createTestZkDocument()
-	if err != nil {
-		t.Fatalf("failed to create test zk document: %v", err)
-	}
-
-	docBytes, err := cbor.Marshal(doc)
-	if err != nil {
-		t.Fatalf("failed to marshal zk document: %v", err)
-	}
-
-	resp := zkDeviceResponse{
-		Version:     "1.0",
-		ZKDocuments: [][]byte{docBytes},
-		Status:      0,
-	}
-
-	respBytes, err := cbor.Marshal(resp)
-	if err != nil {
-		t.Fatalf("failed to marshal device response: %v", err)
-	}
-
-	_, err = ProcessDeviceResponseOriginal(respBytes)
-	if err != nil {
-		t.Errorf("ProcessDeviceResponse() error = %v, wantErr %v", err, false)
-	}
-}
-
-func TestValidateRequest(t *testing.T) {
-	doc, err := createTestZkDocument()
-	if err != nil {
-		t.Fatalf("failed to create test zk document: %v", err)
-	}
-
-	if err := validateRequest(doc); err != nil {
-		t.Errorf("validateRequest() error = %v, wantErr %v", err, false)
-	}
-
-	doc.ZKSystemType.System = "invalid"
-	if err := validateRequest(doc); err == nil {
-		t.Error("validateRequest() error = nil, wantErr not nil")
-	}
-}
-
 func TestValidateIssuerKey(t *testing.T) {
 	ca, _, err := generateTestCA()
 	if err != nil {

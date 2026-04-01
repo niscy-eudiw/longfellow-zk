@@ -144,17 +144,10 @@ TEST(BitPlucker, EltMuxer) {
   for (size_t i = 0; i < 8; ++i) {
     auto enc = bit_plucker_point<Field, 8>()(i, F);
 
-    EltW range = em_z.mux(L.konst(enc));
-    L.assert_eq(&range, arr_z[i]);
-
-    range = em_e.mux(L.konst(enc));
-    L.assert_eq(&range, arr_e[i]);
-
-    range = em_r.mux(L.konst(enc));
-    L.assert_eq(&range, arr_r[i]);
-
-    range = em_s.mux(L.konst(enc));
-    L.assert_eq(&range, arr_s[i]);
+    L.assert_eq(em_z.mux(L.konst(enc)), arr_z[i]);
+    L.assert_eq(em_e.mux(L.konst(enc)), arr_e[i]);
+    L.assert_eq(em_r.mux(L.konst(enc)), arr_r[i]);
+    L.assert_eq(em_s.mux(L.konst(enc)), arr_s[i]);
   }
 }
 
@@ -178,12 +171,10 @@ TEST(BitPlucker, EltMuxer9) {
   const EltMuxer<Logic, 9, 8> em2(L, arr_v);
   for (size_t i = 0; i < 128 + /*intentional extra element*/ 1; ++i) {
     auto enc = bit_plucker_point<Field, 8>()(i, F);
-    EltW range = em2.mux(L.konst(enc));
     if (i < 9) {
-      L.assert_eq(&range, arr_v[i]);
+      L.assert_eq(em2.mux(L.konst(enc)), arr_v[i]);
     } else {
-      auto ee = range.elt();
-      EXPECT_NE(ee, F.zero());
+      EXPECT_NE(em2.mux(L.konst(enc)).elt(), F.zero());
     }
   }
 }

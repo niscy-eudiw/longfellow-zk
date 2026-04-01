@@ -82,13 +82,13 @@ add_subdirectory(circuits/mdoc)
 add_subdirectory(circuits/sha)
 
 if(PROOFS_BUILD_TESTS)
-    # experiments and tests, not used in production, may be buggy
-    add_subdirectory(circuits/tests/anoncred)
-    add_subdirectory(circuits/tests/sha3)
-    add_subdirectory(circuits/tests/base64)
-    add_subdirectory(circuits/tests/jwt)
-    add_subdirectory(circuits/tests/ripemd)
-
+	# experiments and tests, not used in production, may be buggy
+	add_subdirectory(circuits/tests/anoncred)
+	add_subdirectory(circuits/tests/sha3)
+	add_subdirectory(circuits/tests/base64)
+	add_subdirectory(circuits/tests/jwt)
+	add_subdirectory(circuits/tests/ripemd)
+	add_subdirectory(circuits/tests/pq/ml_dsa)
     # experimental mdoc stuff, not used in production
     add_subdirectory(circuits/tests/mdoc)
 endif()

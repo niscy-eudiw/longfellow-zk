@@ -24,9 +24,9 @@
 #include "circuits/logic/bit_plucker.h"
 #include "circuits/logic/counter.h"
 #include "circuits/logic/routing.h"
-#include "circuits/tests/mdoc/mdoc_1f_io.h"
 #include "circuits/mdoc/mdoc_constants.h"
 #include "circuits/sha/flatsha256_circuit.h"
+#include "circuits/tests/mdoc/mdoc_1f_io.h"
 #include "util/panic.h"
 namespace proofs {
 
@@ -254,8 +254,9 @@ class mdoc_1f {
     cbor_.assert_date_after_at(kMdoc1MaxMsoLen, vw.valid_until_.v, now,
                                dsC.data());
 
-    PathEntry dk[2] = {{vw.dev_key_info_, kDeviceKeyInfoLen, kDeviceKeyInfoID},
-                       {vw.dev_key_, kDeviceKeyLen, kDeviceKeyID}};
+    PathEntry dk[2] = {
+        {vw.dev_key_info_, kDeviceKeyInfoLen, kDeviceKeyInfoID},
+        {vw.dev_key_, kDeviceKeyLen, kDeviceKeyID}};
     assert_path(2, dk, vw, dsC, psC);
     cbor_.assert_map_entry(kMdoc1MaxMsoLen, vw.dev_key_.v, 2, vw.dev_key_pkx_.k,
                            vw.dev_key_pkx_.v, vw.dev_key_pkx_.ndx, dsC.data(),
@@ -270,8 +271,9 @@ class mdoc_1f {
     assert_elt_as_be_bytes_at(kMdoc1MaxMsoLen, vw.dev_key_pky_.v, 32, vw.dpky_,
                               dsC.data());
     // Attributes parsing
-    PathEntry ak[2] = {{vw.value_digests_, kValueDigestsLen, kValueDigestsID},
-                       {vw.org_, kOrgLen, kOrgID}};
+    PathEntry ak[2] = {
+        {vw.value_digests_, kValueDigestsLen, kValueDigestsID},
+        {vw.org_, kOrgLen, kOrgID}};
     assert_path(2, ak, vw, dsC, psC);
 
     // Attributes: Equality of hash with MSO value
@@ -305,7 +307,7 @@ class mdoc_1f {
     for (size_t j = 8; j-- > 0;) {
       auto hj = sha_.bp_.unpack_v32(H[j]);
       for (size_t k = 0; k < 32; ++k) {
-        h = lc_.axpy(&h, twok, lc_.eval(hj[k]));
+        h = lc_.axpy(h, twok, lc_.eval(hj[k]));
         lc_.f_.add(twok, twok);
       }
     }
@@ -325,17 +327,17 @@ class mdoc_1f {
       for (size_t i = 0; i < 8; ++i) {
         for (size_t k = 0; k < sha_.bp_.kNv32Elts; ++k) {
           if (b == 0) {
-            x[i][k] = lc_.mul(&ebt, vw.sig_sha_[b].h1[i][k]);
+            x[i][k] = lc_.mul(ebt, vw.sig_sha_[b].h1[i][k]);
           } else {
-            auto maybe_sha = lc_.mul(&ebt, vw.sig_sha_[b].h1[i][k]);
-            x[i][k] = lc_.add(&x[i][k], maybe_sha);
+            auto maybe_sha = lc_.mul(ebt, vw.sig_sha_[b].h1[i][k]);
+            x[i][k] = lc_.add(x[i][k], maybe_sha);
           }
         }
       }
     }
 
     EltW h = repack32(x);
-    lc_.assert_eq(&h, e);
+    lc_.assert_eq(h, e);
   }
 
   // Checks that an attribute id or attribute value is as expected.
@@ -346,14 +348,14 @@ class mdoc_1f {
     for (size_t j = 0; j < max; ++j) {
       auto ll = lc_.vlt(j, len);
       auto same = lc_.eq(8, got[j].data(), want[j].data());
-      lc_.assert_implies(&ll, same);
+      lc_.assert_implies(ll, same);
     }
   }
 
   void assert_path(size_t len, PathEntry p[], const Witness& vw,
                    std::vector<typename CborL::decode>& dsC,
                    std::vector<typename CborL::parse_output>& psC) const {
-    vind start = vw.prepad_;
+    vind start(vw.prepad_);
     for (size_t i = 0; i < len; ++i) {
       cbor_.assert_map_entry(kMdoc1MaxMsoLen, start, i, p[i].ind.k, p[i].ind.v,
                              p[i].ind.ndx, dsC.data(), psC.data());
@@ -380,23 +382,23 @@ class mdoc_1f {
     if (len < 24) {
       size_t expected_header = (2 << 5) + len;
       auto eh = LC.konst(expected_header);
-      LC.assert_eq(&B[0], eh);
+      LC.assert_eq(B[0], eh);
     } else if (len < 256) {
       size_t expected_header = (2 << 5) + 24;
       auto eh = LC.konst(expected_header);
-      LC.assert_eq(&B[0], eh);
-      LC.assert_eq(&B[1], LC.konst(len));
+      LC.assert_eq(B[0], eh);
+      LC.assert_eq(B[1], LC.konst(len));
       si = 2;
     } else {
       check(false, "len >= 256");
     }
 
     for (size_t i = 0; i < len; ++i) {
-      auto tmp = LC.mul(&tx, k256);
-      tx = LC.add(&tmp, B[i + si]);
+      auto tmp = LC.mul(tx, k256);
+      tx = LC.add(tmp, B[i + si]);
     }
 
-    LC.assert_eq(&tx, X);
+    LC.assert_eq(tx, X);
   }
 
   Flatsha sha_;

@@ -197,6 +197,18 @@ TEST(GF2_128, EvalLagrange) {
   one_test_eval_lagrange<6>();
 }
 
+// Ensure no short loops in Bogorng.
+// Bogorng is optimized for prime fields.  This test ensures
+// the parameters do not break simple testing for GF2_128.
+TEST(GF2_128, Bogorng) {
+  Bogorng<Field> rng(&F);
+  Elt start = rng.next();
+  for (size_t i = 0; i < 1000000; ++i) {
+    Elt x = rng.next();
+    EXPECT_NE(x, start);
+  }
+}
+
 template <size_t N>
 void one_test_extend() {
   using T2 = Poly<2, Field>;

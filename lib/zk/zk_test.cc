@@ -263,15 +263,9 @@ TEST(ZK, Rfc_testvector1) {
     Q.private_input();
     EltW m = LC.eltw_input();
     EltW s = LC.eltw_input();
-    EltW sm2 = LC.sub(&s, LC.konst(2));
-    EltW m2 = LC.mul(&m, m);
-    EltW sm2m2 = LC.mul(&sm2, m2);
-    EltW sm4 = LC.sub(&s, LC.konst(4));
-    EltW sm4m = LC.mul(&sm4, m);
-    EltW t = LC.sub(&sm2m2, sm4m);
-    EltW k2 = LC.konst(2);
-    EltW nn = LC.mul(&n, k2);
-    LC.assert_eq(&t, nn);
+    LC.assert_eq(LC.sub(LC.mul(LC.sub(s, LC.konst(2)), LC.mul(m, m)),
+                        LC.mul(LC.sub(s, LC.konst(4)), m)),
+                 LC.mul(n, LC.konst(2)));
     circuit = Q.mkcircuit(1);
     dump_info("rfc_sgonal", 1, Q);
   }

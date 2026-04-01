@@ -40,6 +40,7 @@
 #include <vector>
 
 #include "circuits/tests/sha3/sha3_round_constants.h"
+#include "circuits/tests/sha3/sha3_slicing.h"
 #include "util/panic.h"
 
 namespace proofs {
@@ -62,7 +63,7 @@ class Sha3Circuit {
           a[b * 8 + j] = block[i + b][j];
         }
       }
-      A[x][y] = lc_.vxor(&A[x][y], a);
+      A[x][y] = lc_.vxor(A[x][y], a);
       ++x;
       if (x == 5) {
         ++y;
@@ -73,16 +74,39 @@ class Sha3Circuit {
 
   // FIPS 202 3.2.1, theta
   void theta(v64 A[5][5]) {
-    v64 C[5];
+    // The reference computes a five-way xor
+    //
+    // C[x] = A[x][0] ^ A[x][1] ^ A[x][2] ^ A[x][3] ^ A[x][4]
+    //
+    // However, computing C[x] requires three levels of xor.
+    // Instead, we write C[x] = C0[x] ^ C1[x] where
+    //
+    // C0[x] = A[x][0] ^ A[x][1] ^ A[x][2] ^ A[x][3]
+    // C1[x] = A[x][4]
+    //
+    // C0 requires two XOR levels, C1 is free.
+    //
+    // Later, the reference computes
+    //
+    //  D_x = C[(x + 4) % 5] ^ rotl(C[(x + 1) % 5], 1)
+    //
+    // Similarly, we split D_x = D0_x ^ D1_x.
+    v64 C0[5], C1[5];
     for (size_t x = 0; x < 5; ++x) {
-      auto a012 = lc_.vxor3(&A[x][0], &A[x][1], A[x][2]);
-      C[x] = lc_.vxor3(&a012, &A[x][3], A[x][4]);
+      auto a01 = lc_.vxor(A[x][0], A[x][1]);
+      auto a23 = lc_.vxor(A[x][2], A[x][3]);
+      C0[x] = lc_.vxor(a23, a01);
+      C1[x] = A[x][4];
     }
 
     for (size_t x = 0; x < 5; ++x) {
-      v64 D_x = lc_.vxor(&C[(x + 4) % 5], lc_.vrotl(C[(x + 1) % 5], 1));
+      v64 D0_x = lc_.vxor(C0[(x + 4) % 5], lc_.vrotl(C0[(x + 1) % 5], 1));
+      v64 D1_x = lc_.vxor(C1[(x + 4) % 5], lc_.vrotl(C1[(x + 1) % 5], 1));
       for (size_t y = 0; y < 5; ++y) {
-        A[x][y] = lc_.vxor(&A[x][y], D_x);
+        // D1_x is available two levels before D0_x, so we xor
+        // it in first.
+        A[x][y] = lc_.vxor(A[x][y], D1_x);
+        A[x][y] = lc_.vxor(A[x][y], D0_x);
       }
     }
   }
@@ -111,28 +135,32 @@ class Sha3Circuit {
   void chi(const v64 A1[5][5], v64 A[5][5]) {
     for (size_t x = 0; x < 5; ++x) {
       for (size_t y = 0; y < 5; ++y) {
-        A[x][y] = lc_.vxor(&A1[x][y], lc_.vand(&A1[(x + 2) % 5][y],
-                                               lc_.vnot(A1[(x + 1) % 5][y])));
+        A[x][y] = lc_.vxor(A1[x][y], lc_.vand(A1[(x + 2) % 5][y],
+                                              lc_.vnot(A1[(x + 1) % 5][y])));
       }
     }
   }
 
   // FIPS 202 3.2.5, iota
   void iota(v64 A[5][5], size_t round) {
-    A[0][0] = lc_.vxor(&A[0][0], of_scalar(sha3::sha3_rc[round]));
+    A[0][0] = lc_.vxor(A[0][0], of_scalar(sha3::sha3_rc[round]));
   }
 
  public:
   explicit Sha3Circuit(const LogicCircuit& lc) : lc_(lc) {}
 
   struct BlockWitness {
-    v64 a_intermediate[6][5][5];
+    // One set of wires per round.  However the circuit only
+    // uses rounds satisfying SHA3_SLICE_AT()
+    v64 a_intermediate[24][5][5];
 
     void input(const LogicCircuit& lc) {
-      for (size_t i = 0; i < 6; ++i) {
-        for (size_t x = 0; x < 5; ++x) {
-          for (size_t y = 0; y < 5; ++y) {
-            a_intermediate[i][x][y] = lc.template vinput<64>();
+      for (size_t round = 0; round < 24; ++round) {
+        if (sha3_slice_at(round)) {
+          for (size_t x = 0; x < 5; ++x) {
+            for (size_t y = 0; y < 5; ++y) {
+              a_intermediate[round][x][y] = lc.template vinput<64>();
+            }
           }
         }
       }
@@ -161,12 +189,11 @@ class Sha3Circuit {
       chi(A1, A);
       iota(A, round);
 
-      if ((round % 4) == 3 && round < 23) {
-        int idx = round / 4;
+      if (sha3_slice_at(round)) {
         for (size_t x = 0; x < 5; ++x) {
           for (size_t y = 0; y < 5; ++y) {
-            lc_.vassert_eq(&A[x][y], bw.a_intermediate[idx][x][y]);
-            A[x][y] = bw.a_intermediate[idx][x][y];
+            sha3_vassert_eq(A[x][y], bw.a_intermediate[round][x][y]);
+            A[x][y] = bw.a_intermediate[round][x][y];
           }
         }
       }
@@ -200,44 +227,11 @@ class Sha3Circuit {
     size_t num_squeeze_blocks = (outlen == 0) ? 0 : (outlen - 1) / rate;
     check(bws.size() == num_absorb_blocks + num_squeeze_blocks,
           "Incorrect number of BlockWitnesses");
-    v64 A[5][5];
-    for (int x = 0; x < 5; ++x) {
-      for (int y = 0; y < 5; ++y) {
-        A[x][y] = lc_.template vbit<64>(0);
-      }
-    }
 
-    // Absorb phase
-    std::vector<v8> block(200);  // invariant: block[] is zero-padded.
-    for (size_t i = 0; i < 200; ++i) block[i] = lc_.template vbit<8>(0);
-    size_t bw_idx = 0;
-    size_t ptr = 0;
-
-    for (size_t i = 0; i < seed.size(); ++i) {
-      block[ptr++] = seed[i];
-      if (ptr == rate) {
-        xorin_block(A, block, rate);
-        keccak_f_1600(A, bws[bw_idx++]);
-        ptr = 0;
-        for (size_t j = 0; j < 200; ++j) block[j] = lc_.template vbit<8>(0);
-      }
-    }
-
-    // Pad and process the last block (which might be empty or partial)
-    // By the invariant, block[] was initialized with all zeros.
-    auto pad1 = lc_.template vbit<8>(0x1F);
-    auto pad2 = lc_.template vbit<8>(0x80);
-    block[ptr] = pad1;  // ptr points to a 0 block at this point.
-    // We do not know if rate-1 = ptr, and thus we use an xor here
-    // to handle all cases.
-    block[rate - 1] = lc_.vxor(&block[rate - 1], pad2);
-
-    xorin_block(A, block, rate);
-    keccak_f_1600(A, bws[bw_idx++]);
-
-    // Squeeze
+    // Eagerly populate output
     out.resize(outlen);
     size_t out_ptr = 0;
+    size_t sqz_req = 0;
     while (out_ptr < outlen) {
       std::vector<v8> squeeze_block(200);
       // It is possible to use a single index into A here,
@@ -248,7 +242,9 @@ class Sha3Circuit {
         // Handle the awkward copy of v64 into v8s.
         for (size_t b = 0; b < 8; ++b) {
           for (size_t j = 0; j < 8; ++j) {
-            squeeze_block[i + b][j] = A[sx][sy][b * 8 + j];
+            squeeze_block[i + b][j] =
+                bws[num_absorb_blocks - 1 + sqz_req]
+                    .a_intermediate[23][sx][sy][b * 8 + j];
           }
         }
         ++sx;
@@ -261,11 +257,92 @@ class Sha3Circuit {
       for (size_t i = 0; i < take; ++i) {
         out[out_ptr++] = squeeze_block[i];
       }
-      if (out_ptr < outlen) {
-        keccak_f_1600(A, bws[bw_idx++]);
+      sqz_req++;
+    }
+
+    // Evaluate blocks in parallel
+    // Absorb phase
+    std::vector<v8> block(200);  // invariant: block[] is zero-padded.
+    for (size_t i = 0; i < 200; ++i) block[i] = lc_.template vbit<8>(0);
+    size_t bw_idx = 0;
+    size_t ptr = 0;
+
+    for (size_t i = 0; i < seed.size(); ++i) {
+      block[ptr++] = seed[i];
+      if (ptr == rate) {
+        v64 A_in[5][5];
+        for (int x = 0; x < 5; ++x) {
+          for (int y = 0; y < 5; ++y) {
+            if (bw_idx == 0) {
+              A_in[x][y] = lc_.template vbit<64>(0);
+            } else {
+              A_in[x][y] = bws[bw_idx - 1].a_intermediate[23][x][y];
+            }
+          }
+        }
+
+        xorin_block(A_in, block, rate);
+        keccak_f_1600(A_in, bws[bw_idx++]);
+        ptr = 0;
+        for (size_t j = 0; j < 200; ++j) block[j] = lc_.template vbit<8>(0);
       }
     }
+
+    // Pad and process the last block
+    auto pad1 = lc_.template vbit<8>(0x1F);
+    auto pad2 = lc_.template vbit<8>(0x80);
+    block[ptr] = pad1;
+    block[rate - 1] = lc_.vxor(block[rate - 1], pad2);
+
+    v64 A_in[5][5];
+    for (int x = 0; x < 5; ++x) {
+      for (int y = 0; y < 5; ++y) {
+        if (bw_idx == 0) {
+          A_in[x][y] = lc_.template vbit<64>(0);
+        } else {
+          A_in[x][y] = bws[bw_idx - 1].a_intermediate[23][x][y];
+        }
+      }
+    }
+
+    xorin_block(A_in, block, rate);
+    keccak_f_1600(A_in, bws[bw_idx++]);
+
+    // Squeeze phase blocks
+    for (size_t i = 0; i < num_squeeze_blocks; ++i) {
+      v64 A_sqz[5][5];
+      for (int x = 0; x < 5; ++x) {
+        for (int y = 0; y < 5; ++y) {
+          A_sqz[x][y] = bws[num_absorb_blocks - 1 + i].a_intermediate[23][x][y];
+        }
+      }
+      keccak_f_1600(A_sqz, bws[bw_idx++]);
+    }
+
     check(bw_idx == bws.size(), "Did not consume all BlockWitnesses");
+  }
+
+  template <size_t I0, size_t I1>
+  void sha3_vassert_eq_range(const v64& x, const v64& y) const {
+    auto xx = lc_.as_scalar(lc_.template slice<I0, I1>(x));
+    auto yy = lc_.as_scalar(lc_.template slice<I0, I1>(y));
+    lc_.assert_eq(xx, yy);
+  }
+
+  void sha3_vassert_eq(const v64& x, const v64& y) const {
+    if (LogicCircuit::Field::kSubFieldBits == 16) {
+      sha3_vassert_eq_range<0, 16>(x, y);
+      sha3_vassert_eq_range<16, 32>(x, y);
+      sha3_vassert_eq_range<32, 48>(x, y);
+      sha3_vassert_eq_range<48, 64>(x, y);
+    } else {
+      // Assume >= 22 bit subfield.  If this assumption is
+      // wrong, as_scalar() will crash at circuit-compile time,
+      // but we won't produce an unsound circuit.
+      sha3_vassert_eq_range<0, 22>(x, y);
+      sha3_vassert_eq_range<22, 43>(x, y);
+      sha3_vassert_eq_range<43, 64>(x, y);
+    }
   }
 };
 

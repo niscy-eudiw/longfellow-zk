@@ -97,6 +97,38 @@ TEST(Nat, Parsing) {
   }
 }
 
+TEST(Nat, OfBytesMasking) {
+  uint8_t buf[32] = {
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+  };
+
+  Nat<4> a0 = Nat<4>::of_bytes(buf, 0);
+  std::array<uint64_t, 4> expected_0 = {0, 0, 0, 0};
+  EXPECT_EQ(a0, Nat<4>(expected_0));
+
+  Nat<4> a10 = Nat<4>::of_bytes(buf, 10);
+  std::array<uint64_t, 4> expected_10 = {0x3ff, 0, 0, 0};
+  EXPECT_EQ(a10, Nat<4>(expected_10));
+
+  Nat<4> a64 = Nat<4>::of_bytes(buf, 64);
+  std::array<uint64_t, 4> expected_64 = {~0ull, 0, 0, 0};
+  EXPECT_EQ(a64, Nat<4>(expected_64));
+
+  Nat<4> a65 = Nat<4>::of_bytes(buf, 65);
+  std::array<uint64_t, 4> expected_65 = {~0ull, 1ull, 0, 0};
+  EXPECT_EQ(a65, Nat<4>(expected_65));
+
+  Nat<4> a256 = Nat<4>::of_bytes(buf, 256);
+  std::array<uint64_t, 4> expected_256 = {~0ull, ~0ull, ~0ull, ~0ull};
+  EXPECT_EQ(a256, Nat<4>(expected_256));
+
+  Nat<4> a250 = Nat<4>::of_bytes(buf, 250);
+  std::array<uint64_t, 4> expected_250 = {~0ull, ~0ull, ~0ull, (~0ull) >> 6};
+  EXPECT_EQ(a250, Nat<4>(expected_250));
+}
+
 TEST(Nat, BadStrings) {
   const char* bad_strings[] = {
       "123456789abcdef",

@@ -14,6 +14,7 @@
 
 #include "proto/circuit.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -36,6 +37,16 @@
 namespace proofs {
 namespace {
 
+template <class Field>
+void expect_same_id(const Circuit<Field>& c0, const Circuit<Field>& c1,
+                    const Field& F) {
+  std::array<uint8_t, 32> id0;
+  circuit_id(id0.data(), c0, F);
+  std::array<uint8_t, 32> id1;
+  circuit_id(id1.data(), c1, F);
+  EXPECT_EQ(id0, id1);
+}
+
 template <class FF>
 void serialize_test2(const Circuit<FF>& circuit, const FF& F,
                      FieldID field_id) {
@@ -53,7 +64,7 @@ void serialize_test2(const Circuit<FF>& circuit, const FF& F,
   auto c2 = cr2.from_bytes(rb, /*enforce_circuit_id=*/true);
   log(INFO, "Parsed from bytes");
   EXPECT_TRUE(c2 != nullptr);
-  EXPECT_TRUE(*c2 == circuit);
+  expect_same_id(*c2, circuit, F);
 
   // Test truncated inputs.
   ReadBuffer rb1(bytes.data(), sz - 1);
@@ -67,7 +78,7 @@ void serialize_test2(const Circuit<FF>& circuit, const FF& F,
   uint8_t tmp[32];
   // Test corrupted numconsts
   ReadBuffer rb3(bytes);
-  size_t clobber = CircuitRep<FF>::kBytesWritten * 7 - 1;
+  size_t clobber = CircuitRep<FF>::kBytesPerSizeT * 7 - 1;
   tmp[0] = bytes[clobber];
   bytes[clobber] = 1;
   bad = cr2.from_bytes(rb3, /*enforce_circuit_id=*/true);

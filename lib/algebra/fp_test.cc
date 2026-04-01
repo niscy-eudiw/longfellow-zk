@@ -19,6 +19,7 @@
 #include <cstdint>
 
 #include "algebra/bogorng.h"
+#include "algebra/fp24.h"
 #include "algebra/fp_p128.h"
 #include "algebra/fp_p256.h"
 #include "algebra/fp_p256k1.h"
@@ -159,7 +160,8 @@ void of_scalar(const Field& F) {
     n[i] = i + 47;
   }
   auto want = F.zero();
-  auto base = F.of_scalar(1ull << 32);
+  auto base = F.of_scalar(1ull << 16);
+  F.mul(base, base);  // base = 2^32
   F.mul(base, base);  // base = 2^64
   for (size_t i = Field::kU64; i-- > 0;) {
     want = F.addf(F.of_scalar(i + 47), F.mulf(base, want));
@@ -184,7 +186,9 @@ void of_scalar(const Field& F) {
   // powers of two
   for (size_t i = 0; i < 64; ++i) {
     uint64_t k = static_cast<uint64_t>(1) << i;
-    EXPECT_EQ(F.of_scalar(k), F.beta(i));
+    if (F.fits(k)) {
+      EXPECT_EQ(F.of_scalar(k), F.beta(i));
+    }
   }
 }
 
@@ -285,26 +289,31 @@ void onefield(const Field& F) {
   inverse(F);
   of_scalar(F);
   poly_evaluation_points(F);
-  dot(F);
-  reduce<1>(F);
-  reduce<2>(F);
-  reduce<3>(F);
-  reduce<4>(F);
-  reduce<5>(F);
-  reduce<6>(F);
-  reduce<30>(F);
+  if (F.kSupportsDot) {
+    dot(F);
+    reduce<1>(F);
+    reduce<2>(F);
+    reduce<3>(F);
+    reduce<4>(F);
+    reduce<5>(F);
+    reduce<6>(F);
+    reduce<30>(F);
+  }
 
   EXPECT_EQ(F.zero(), F.addf(F.one(), F.mone()));
   EXPECT_EQ(F.one(), F.addf(F.half(), F.half()));
   EXPECT_EQ(F.two(), F.addf(F.one(), F.one()));
 
-  EXPECT_EQ(F.of_string("0x123456789abcdef0"),
-            F.of_scalar(0x123456789abcdef0ull));
-  EXPECT_EQ(F.of_string("0X123456789ABCDEF0"),
-            F.of_scalar(0x123456789abcdef0ull));
+  const uint64_t c = 0x123456789abcdef0ull;
+  if (F.fits(c)) {
+    EXPECT_EQ(F.of_string("0x123456789abcdef0"), F.of_scalar(c));
+    EXPECT_EQ(F.of_string("0X123456789ABCDEF0"), F.of_scalar(c));
+  }
 }
 
 TEST(Fp, AllSizes) {
+  onefield(Fp24(8380417));   // ML-DSA44 prime
+  onefield(Fp24(16777213));  // largest 24-bit prime
   onefield(Fp<1>("18446744073709551557"));
   onefield(Fp<2>("340282366920938463463374607431768211297"));
   onefield(Fp<3>("6277101735386680763835789423207666416102355444464034512659"));
@@ -329,6 +338,24 @@ TEST(Fp, AllSizes) {
   // 1057848127303065953 * 2108036397730900859 =
   // 2229982355626334583552843599381353627
   onefield(Fp<2>("2229982355626334583552843599381353627"));
+}
+
+TEST(Fp, ExactBits) {
+  Fp<1> F17("17");
+  EXPECT_EQ(F17.exact_bits_, 5);  // 17 is 10001 in binary, which is 5 bits
+
+  Fp<1> F_large("18446744073709551557");  // Near 2^64
+  EXPECT_EQ(F_large.exact_bits_, 64);
+
+  Fp256k1<> F_secp256k1;
+  // secp256k1 modulus is 256 bits exactly
+  EXPECT_EQ(F_secp256k1.exact_bits_, 256);
+
+  Fp384<> F_p384;
+  EXPECT_EQ(F_p384.exact_bits_, 384);
+
+  Fp521<> F_p521;
+  EXPECT_EQ(F_p521.exact_bits_, 521);
 }
 
 TEST(Fp, SmallField) {
@@ -410,6 +437,12 @@ void bench_mul(const Field& F, benchmark::State& state) {
   }
 }
 
+void BM_Fp24_add(benchmark::State& state) {
+  const Fp24 F(16777213);
+  bench_add(F, state);
+}
+BENCHMARK(BM_Fp24_add);
+
 void BM_Fp1_add(benchmark::State& state) {
   const Fp<1> F("18446744073709551557");
   bench_add(F, state);
@@ -439,6 +472,12 @@ void BM_p521_add(benchmark::State& state) {
   bench_add(F, state);
 }
 BENCHMARK(BM_p521_add);
+
+void BM_Fp24_mul(benchmark::State& state) {
+  const Fp24 F(16777213);
+  bench_mul(F, state);
+}
+BENCHMARK(BM_Fp24_mul);
 
 void BM_Fp1_mul(benchmark::State& state) {
   const Fp<1> F("18446744073709551557");

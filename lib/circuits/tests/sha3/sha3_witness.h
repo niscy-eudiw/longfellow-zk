@@ -20,15 +20,16 @@
 #include <vector>
 
 #include "arrays/dense.h"
+#include "circuits/tests/sha3/sha3_slicing.h"
 
 namespace proofs {
 
 struct Sha3Witness {
-  // We record the intermediate state of A every 4 rounds.
-  // Keccak-f[1600] has 24 rounds, so there are 6 intermediate states recorded
-  // (after round 3, 7, 11, 15, 19, 23).
   struct BlockWitness {
-    uint64_t a_intermediate[6][5][5];
+    // The witnesses are not sliced---we produce a witness for
+    // every round.  The circuit and the filler may or may
+    // not use all values depending on the slicing parameters
+    uint64_t a_intermediate[24][5][5];
   };
 
   // Runs one block of the keccak permutation on state A, recording
@@ -43,18 +44,25 @@ struct Sha3Witness {
   // Fills a Dense array mapping with exactly the bit outputs of the block
   // witnesses.
   template <class Field>
-  static void fill_witness(DenseFiller<Field>& filler,
-                           const std::vector<BlockWitness>& bws,
+  static void fill_witness(DenseFiller<Field>& filler, const BlockWitness& w,
                            const Field& f) {
-    for (const auto& w : bws) {
-      for (size_t i = 0; i < 6; ++i) {
+    for (size_t round = 0; round < 24; ++round) {
+      if (sha3_slice_at(round)) {
         for (size_t x = 0; x < 5; ++x) {
           for (size_t y = 0; y < 5; ++y) {
-            uint64_t val = w.a_intermediate[i][x][y];
+            uint64_t val = w.a_intermediate[round][x][y];
             filler.push_back(val, 64, f);
           }
         }
       }
+    }
+  }
+  template <class Field>
+  static void fill_witness(DenseFiller<Field>& filler,
+                           const std::vector<BlockWitness>& bws,
+                           const Field& f) {
+    for (const auto& w : bws) {
+      fill_witness(filler, w, f);
     }
   }
 };

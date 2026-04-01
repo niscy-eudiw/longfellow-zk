@@ -47,7 +47,7 @@ class Base64Decoder {
     size_t oc = 0;
 
     for (size_t i = 0; i < n; i += 4, oc += 3) {
-      v6 quad[4] = {zero, zero, zero, zero};
+      v6 quad[4]{v6(zero), v6(zero), v6(zero), v6(zero)};
       for (size_t j = 0; j < 4 && i + j < n; ++j) {
         decode(inputs[i + j], quad[j]);
       }
@@ -69,12 +69,12 @@ class Base64Decoder {
     size_t oc = 0;
 
     for (size_t i = 0; i < n; i += 4, oc += 3) {
-      v6 quad[4] = {zero, zero, zero, zero};
+      v6 quad[4]{v6(zero), v6(zero), v6(zero), v6(zero)};
       BitW invalid;
       for (size_t j = 0; j < 4 && i + j < n; ++j) {
         decode(inputs[i + j], quad[j], invalid);
         auto range = lc_.vlt(i + j, len);
-        lc_.assert_implies(&range, lc_.lnot(invalid));
+        lc_.assert_implies(range, lc_.lnot(invalid));
       }
       // repack
       for (size_t j = 0; j < 24 && (oc + j / 8) < max; ++j) {
@@ -83,13 +83,13 @@ class Base64Decoder {
     }
   }
 
-  void decode(const v8 in, v6& out) const {
+  void decode(const v8& in, v6& out) const {
     BitW invalid;
     decode(in, out, invalid);
     lc_.assert0(invalid);
   }
 
-  void decode(const v8 in, v6& out, BitW& invalid) const {
+  void decode(const v8& in, v6& out, BitW& invalid) const {
     v8 ni;
     for (size_t i = 0; i < 8; ++i) {
       ni[i] = lc_.lnot(in[i]);

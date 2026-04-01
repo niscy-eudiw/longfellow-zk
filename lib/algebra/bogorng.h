@@ -15,25 +15,38 @@
 #ifndef PRIVACY_PROOFS_ZK_LIB_ALGEBRA_BOGORNG_H_
 #define PRIVACY_PROOFS_ZK_LIB_ALGEBRA_BOGORNG_H_
 
+#include <cstdint>
 namespace proofs {
 // Totally bogus "random" number generator, used only for testing.
-// There is no guarantee that it will cycle over all elements in the
-// field, but this keeps dependencies internal to this directory.
 // The public and internal functions of this class all take a const Field&
 // parameter to produce random elements in the Field. It is the caller's
 // responsibility to ensure the object remains valid during execution.
+//
+// We are testing mostly with prime fields. Following Knuth, we pick a simple
+// multiplier a, with reasonable Hamming weight, and good spectral scores.
+// The smallest prime we care about is ~23 bits, so we tune "a" for that.
+// For GF2_128, we use the same a*x generator, and have a unit test to ensure
+// there are no short loops.
+//
+// Rank 3: a = 7300988
+// Binary: 0b11011110110011101111100
+// 2D Spectral Score: 2737.21 (Max theoretical is ~3109)
+// 3D Spectral Score: 184.24 (Max theoretical is ~228)
+//
+// 3d: 184.24
+// 3d: 7300988.00 // for > 128-bit field
 template <class Field>
 class Bogorng {
   using Elt = typename Field::Elt;
 
  public:
-  explicit Bogorng(const Field* F)
-      : f_(F), next_(F->of_scalar_field(123456789u)) {}
+  explicit Bogorng(const Field* F, uint64_t seed = 1234569u,
+                   uint64_t mul = 7300988u)
+      : f_(F), next_(F->of_scalar_field(seed)), mul_(F->of_scalar_field(mul)) {}
 
   Elt next() {
     // really old-school
-    f_->mul(next_, f_->of_scalar_field(1103515245u));
-    f_->add(next_, f_->of_scalar_field(12345u));
+    f_->mul(next_, mul_);
     return next_;
   }
 
@@ -48,6 +61,7 @@ class Bogorng {
  private:
   const Field* f_;
   Elt next_;
+  Elt mul_;
 };
 }  // namespace proofs
 

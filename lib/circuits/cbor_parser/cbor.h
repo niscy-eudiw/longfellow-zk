@@ -81,16 +81,16 @@ class Cbor {
     // -------------------------------------------------------------
     // Decoder didn't fail
     for (size_t i = 0; i < n; ++i) {
-      L.assert_implies(&ds[i].header, L.lnot(ds[i].bd.invalid));
+      L.assert_implies(ds[i].header, L.lnot(ds[i].bd.invalid));
     }
     // if LENGTH_PLUS_NEXT_V8 is TRUE in the last position,
     // then the input is invalid.
-    L.assert_implies(&ds[n - 1].header,
+    L.assert_implies(ds[n - 1].header,
                      L.lnot(ds[n - 1].bd.length_plus_next_v8));
 
     // if COUNT_IS_NEXT_V8 is TRUE in the last position,
     // then the input is invalid.
-    L.assert_implies(&ds[n - 1].header, L.lnot(ds[n - 1].bd.count_is_next_v8));
+    L.assert_implies(ds[n - 1].header, L.lnot(ds[n - 1].bd.count_is_next_v8));
 
     // -------------------------------------------------------------
     // Headers are where they are supposed to be.
@@ -107,8 +107,8 @@ class Cbor {
       length[i] = ds[i].bd.length;
       if (i + 1 < n) {
         CEltW len_i =
-            ctr_.ite0(&ds[i].bd.length_plus_next_v8, ds[i + 1].bd.as_counter);
-        length[i] = ctr_.add(&length[i], len_i);
+            ctr_.ite0(ds[i].bd.length_plus_next_v8, ds[i + 1].bd.as_counter);
+        length[i] = ctr_.add(length[i], len_i);
       }
     }
 
@@ -129,7 +129,7 @@ class Cbor {
         // "\A I : HEADER[I+1] => (SLEN_NEXT[I] == 1)"
         for (size_t i = 0; i + 1 < n; ++i) {
           CEltW implies =
-              ctr_.ite0(&header[i + 1], ctr_.add(&slen_next[i], mone_counter));
+              ctr_.ite0(header[i + 1], ctr_.add(slen_next[i], mone_counter));
           ctr_.assert0(implies);
         }
       }
@@ -140,12 +140,12 @@ class Cbor {
         //   PROD_{I, L} HEADER[I+1] ? 1 : (SLEN_NEXT[I] - 1)
         //
         auto f = [&](size_t i) {
-          CEltW snm1 = ctr_.add(&slen_next[i], mone_counter);
-          return L.mux(&header[i + 1], &one, ctr_.znz_indicator(snm1));
+          CEltW snm1 = ctr_.add(slen_next[i], mone_counter);
+          return L.mux(header[i + 1], one, ctr_.znz_indicator(snm1));
         };
         EltW prod = L.mul(0, n - 1, f);
-        auto want_one = L.mul(&prod, gw.invprod_decode);
-        L.assert_eq(&want_one, one);
+        auto want_one = L.mul(prod, gw.invprod_decode);
+        L.assert_eq(want_one, one);
       }
     }
   }
@@ -177,8 +177,8 @@ class Cbor {
     for (size_t l = 0; l < kNCounters; ++l) {
       for (size_t i = 0; i < n; ++i) {
         // at the selected headers, decrement the level-L counter.
-        auto dp = L.land(&ds[i].header, ps[i].sel[l]);
-        ddss[i] = ctr_.ite0(&dp, mone);
+        auto dp = L.land(ds[i].header, ps[i].sel[l]);
+        ddss[i] = ctr_.ite0(dp, mone);
       }
 
       if (l == 0) {
@@ -217,16 +217,16 @@ class Cbor {
         CEltW newc = ctr_.as_counter(ds[i].bd.tagp);
         CEltW count = ds[i].bd.count_as_counter;
         if (i + 1 < n) {
-          count = ctr_.mux(&ds[i].bd.count_is_next_v8, &ds[i + 1].bd.as_counter,
+          count = ctr_.mux(ds[i].bd.count_is_next_v8, ds[i + 1].bd.as_counter,
                            count);
         }
-        newc = ctr_.add(&newc, ctr_.ite0(&ds[i].bd.itemsp, count));
-        newc = ctr_.add(&newc, ctr_.ite0(&ds[i].bd.mapp, count));
+        newc = ctr_.add(newc, ctr_.ite0(ds[i].bd.itemsp, count));
+        newc = ctr_.add(newc, ctr_.ite0(ds[i].bd.mapp, count));
         AA[i] = newc;
 
-        auto sel = L.land(&ps[i].sel[l], ds[i].header);
-        auto tag = L.lor(&ds[i].bd.tagp, ds[i].bd.itemsp);
-        SS[i] = L.land(&sel, tag);
+        auto sel = L.land(ps[i].sel[l], ds[i].header);
+        auto tag = L.lor(ds[i].bd.tagp, ds[i].bd.itemsp);
+        SS[i] = L.land(sel, tag);
       }
     }
 
@@ -252,7 +252,7 @@ class Cbor {
       // be to range-check the input to the bit plucker.
       for (size_t l = 0; l < kNCounters; ++l) {
         for (size_t m = l + 1; m < kNCounters; ++m) {
-          L.assert0(L.land(&ps[i].sel[l], ps[i].sel[m]));
+          L.assert0(L.land(ps[i].sel[l], ps[i].sel[m]));
         }
       }
 
@@ -260,9 +260,9 @@ class Cbor {
       auto sum = L.bit(0);
       for (size_t l = 0; l < kNCounters; ++l) {
         // known to be exclusive by the test above
-        sum = L.lor_exclusive(&sum, ps[i].sel[l]);
+        sum = L.lor_exclusive(sum, ps[i].sel[l]);
       }
-      L.assert_implies(&ds[i].header, sum);
+      L.assert_implies(ds[i].header, sum);
     }
 
     // "All counters are zero at the end of the input"
@@ -285,8 +285,8 @@ class Cbor {
       BitW b = ps[i + 1].sel[0];
       for (size_t l = 1; l < kNCounters; ++l) {
         // b => COUNTER[i][l] == 0
-        ctr_.assert0(ctr_.ite0(&b, ps[i].c[l]));
-        b = L.lor(&b, ps[i + 1].sel[l]);
+        ctr_.assert0(ctr_.ite0(b, ps[i].c[l]));
+        b = L.lor(b, ps[i + 1].sel[l]);
       }
     }
 
@@ -299,14 +299,14 @@ class Cbor {
     for (size_t l = 0; l < kNCounters; ++l) {
       auto f = [&](size_t i) {
         EltW cc = ctr_.znz_indicator(ps[i].c[l]);
-        return L.mux(&ps[i + 1].sel[l], &cc, one);
+        return L.mux(ps[i + 1].sel[l], cc, one);
       };
       prod[l] = L.mul(0, n - 1, f);
     }
 
     EltW p = L.mul(0, kNCounters, [&](size_t l) { return prod[l]; });
-    auto want_one = L.mul(&p, gw.invprod_parse);
-    L.assert_eq(&want_one, one);
+    auto want_one = L.mul(p, gw.invprod_parse);
+    L.assert_eq(want_one, one);
   }
 
   //------------------------------------------------------------
@@ -334,10 +334,10 @@ class Cbor {
     R.shift(j, len + 1, B.data(), n, A.data(), defaultA, /*unroll=*/3);
 
     size_t expected_header = (3 << 5) + len;
-    L.assert_eq(&B[0], L.konst(expected_header));
+    L.assert_eq(B[0], L.konst(expected_header));
     for (size_t i = 0; i < len; ++i) {
       auto bi = L.konst(bytes[i]);
-      L.assert_eq(&B[i + 1], bi);
+      L.assert_eq(B[i + 1], bi);
     }
   }
 
@@ -393,10 +393,10 @@ class Cbor {
     R.shift(j, 20 + 2, B.data(), n, A.data(), defaultA, /*unroll=*/3);
 
     // Check for tag: date/time string.
-    L.vassert_eq(&B[0], L.template vbit<8>(0xc0));
+    L.vassert_eq(B[0], L.template vbit<8>(0xc0));
 
     // Check for string(20)
-    L.vassert_eq(&B[1], L.template vbit<8>(0x74));
+    L.vassert_eq(B[1], L.template vbit<8>(0x74));
   }
 
   //------------------------------------------------------------
@@ -446,7 +446,7 @@ class Cbor {
     EltW B[1];
     size_t unroll = 3;
     R.shift(j, 1, B, n, A.data(), L.konst(256), unroll);
-    L.assert_eq(&B[0], expected);
+    L.assert_eq(B[0], expected);
   }
 
   //------------------------------------------------------------
@@ -458,7 +458,7 @@ class Cbor {
     L.vassert_is_bit(j);
 
     // giant dot product since the veq(j, .) terms are mutually exclusive.
-    auto f = [&](size_t i) { return L.land(&ds[i].header, L.veq(j, i)); };
+    auto f = [&](size_t i) { return L.land(ds[i].header, L.veq(j, i)); };
     L.assert1(L.lor_exclusive(0, n, f));
   }
 
@@ -474,8 +474,8 @@ class Cbor {
     // giant dot product since the veq(j, .) terms are mutually exclusive.
     auto f = [&](size_t i) {
       auto eq_ji = L.veq(j, i);
-      auto dsi = L.land(&ds[i].bd.mapp, ds[i].header);
-      return L.land(&eq_ji, dsi);
+      auto dsi = L.land(ds[i].bd.mapp, ds[i].header);
+      return L.land(eq_ji, dsi);
     };
     L.assert1(L.lor_exclusive(0, n, f));
   }
@@ -514,8 +514,8 @@ class Cbor {
       if (l <= level) {
         // Counters[L] must agree at the key, value, and root
         // of the map.
-        ctr_.assert_eq(&cm, ck);
-        ctr_.assert_eq(&cm, cv);
+        ctr_.assert_eq(cm, ck);
+        ctr_.assert_eq(cm, cv);
       } else if (l == level + 1) {
         CEltW one = ctr_.as_counter(1);
         CEltW two = ctr_.as_counter(2);
@@ -523,9 +523,9 @@ class Cbor {
         // Specifically, if the counter at the map is N, then the j-th
         // key has N-(2*j+1) and the j-th value has N-(2*j+2)
         CEltW jctr = ctr_.as_counter(j);
-        CEltW twoj = ctr_.add(&jctr, jctr);
-        ctr_.assert_eq(&cm, ctr_.add(&ck, ctr_.add(&twoj, one)));
-        ctr_.assert_eq(&cm, ctr_.add(&cv, ctr_.add(&twoj, two)));
+        CEltW twoj = ctr_.add(jctr, jctr);
+        ctr_.assert_eq(cm, ctr_.add(ck, ctr_.add(twoj, one)));
+        ctr_.assert_eq(cm, ctr_.add(cv, ctr_.add(twoj, two)));
       } else {
         // not sure if this is necessary, but all other counters
         // of CM are supposed to be zero.
@@ -549,7 +549,7 @@ class Cbor {
     L.vassert_eq(tot, n);
 
     for (size_t i = 0; i < n; ++i) {
-      L.assert0(L.lmul(&ds[i].bd.as_scalar, L.vlt(i, jroot)));
+      L.assert0(L.lmul(ds[i].bd.as_scalar, L.vlt(i, jroot)));
     }
   }
 
