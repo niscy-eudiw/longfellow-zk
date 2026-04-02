@@ -38,17 +38,12 @@ lipo -create \
     "${OUTPUT_DIR}/temp/lib${FRAMEWORK_NAME}_sim_x86_64.a" \
     -output "${OUTPUT_DIR}/temp/lib${FRAMEWORK_NAME}_simulator.a"
 
-# Create module maps
-echo "Creating module maps..."
-mkdir -p "${OUTPUT_DIR}/temp/device-headers/Modules"
-mkdir -p "${OUTPUT_DIR}/temp/simulator-headers/Modules"
-
 # Copy headers
 cp "${SCRIPT_DIR}/arm64-iphoneos/include/"* "${OUTPUT_DIR}/temp/device-headers/"
 cp "${SCRIPT_DIR}/arm64-iphonesimulator/include/"* "${OUTPUT_DIR}/temp/simulator-headers/"
 
 # Create module map for device
-cat > "${OUTPUT_DIR}/temp/device-headers/Modules/module.modulemap" <<EOF
+cat > "${OUTPUT_DIR}/temp/device-headers/module.modulemap" <<EOF
 module ${FRAMEWORK_NAME} {
     header "../mdoc_zk.h"
     export *
@@ -56,7 +51,7 @@ module ${FRAMEWORK_NAME} {
 EOF
 
 # Create module map for simulator
-cat > "${OUTPUT_DIR}/temp/simulator-headers/Modules/module.modulemap" <<EOF
+cat > "${OUTPUT_DIR}/temp/simulator-headers/module.modulemap" <<EOF
 module ${FRAMEWORK_NAME} {
     header "../mdoc_zk.h"
     export *
